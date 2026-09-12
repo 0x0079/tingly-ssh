@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/0x0079/tingly-shell/internal/auth"
 	"github.com/0x0079/tingly-shell/internal/bridge"
 	"github.com/0x0079/tingly-shell/internal/proto"
 	"github.com/0x0079/tingly-shell/internal/transport"
@@ -28,16 +29,17 @@ Usage:
   tingly-shell server  --listen :7443 --target 127.0.0.1:22 --token-file FILE
   tingly-shell client  --server HOST:7443 --listen 127.0.0.1:2222 --token-file FILE --pin sha256:...
   tingly-shell proxy   --server HOST:7443 --token-file FILE --pin sha256:...
-  tingly-shell keygen
+  tingly-shell keygen --label laptop-mbp14 [--expires 2027-06-01]
 
 Modes:
   server   run next to sshd and bridge incoming streams to --target
   client   listen on a local TCP port; "ssh -p 2222 user@127.0.0.1"
   proxy    bridge stdin/stdout, for ssh -o ProxyCommand='tingly-shell proxy ...'
-  keygen   print a fresh pre-shared token
+  keygen   mint a credential: a token for one device plus its server record
 
-Signals (client and proxy):
-  SIGUSR1  drop the current link and reconnect, e.g. after a network change
+Signals:
+  SIGUSR1  (client, proxy) drop the current link and reconnect, e.g. after a network change
+  SIGHUP   (server) reload the credentials file; revoking a device is deleting its line
 
 Run "tingly-shell <mode> -h" for the flags of a mode.
 `
@@ -59,7 +61,7 @@ func main() {
 	case "proxy":
 		err = runClient(ctx, os.Args[2:], true)
 	case "keygen":
-		err = runKeygen()
+		err = runKeygen(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -107,24 +109,31 @@ func (c *commonFlags) tuning() transport.Tuning {
 func runServer(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
 	var (
-		listen    = fs.String("listen", ":7443", "UDP address to listen on")
-		targets   = fs.String("target", "127.0.0.1:22", "comma separated allowlist of TCP targets; the first is the default")
-		tokenFile = fs.String("token-file", "", "file holding the pre-shared token (required, mode 0600)")
-		stateDir  = fs.String("state-dir", defaultStateDir("server"), "directory for the generated self-signed certificate")
-		certFile  = fs.String("cert", "", "TLS certificate (default: <state-dir>/cert.pem, generated if absent)")
-		keyFile   = fs.String("key", "", "TLS private key (default: <state-dir>/key.pem)")
-		hosts     = fs.String("cert-hosts", "", "comma separated DNS names or IPs for the generated certificate")
-		maxSess   = fs.Int("max-sessions", bridge.DefaultMaxSessions, "concurrent sessions to hold; bounds server memory")
+		listen     = fs.String("listen", ":7443", "UDP address to listen on")
+		targets    = fs.String("target", "127.0.0.1:22", "comma separated allowlist of TCP targets; the first is the default")
+		credFile   = fs.String("credentials", "", "file of client credentials: 'label sha256:<base64> [not-after]' per line")
+		tokenFile  = fs.String("token-file", "", "deprecated alias for --credentials; a file holding one raw shared token")
+		stateDir   = fs.String("state-dir", defaultStateDir("server"), "directory for the generated self-signed certificate")
+		certFile   = fs.String("cert", "", "TLS certificate (default: <state-dir>/cert.pem, generated if absent)")
+		keyFile    = fs.String("key", "", "TLS private key (default: <state-dir>/key.pem)")
+		hosts      = fs.String("cert-hosts", "", "comma separated DNS names or IPs for the generated certificate")
+		maxSess    = fs.Int("max-sessions", bridge.DefaultMaxSessions, "concurrent sessions to hold; bounds server memory")
+		maxPerCred = fs.Int("max-sessions-per-credential", 0, "per-credential session cap; 0 means unlimited")
 	)
 	var common commonFlags
 	common.bind(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *tokenFile == "" {
-		return errors.New("--token-file is required; create one with `tingly-shell keygen`")
+	switch {
+	case *credFile != "" && *tokenFile != "":
+		return errors.New("pass either --credentials or --token-file, not both")
+	case *credFile == "" && *tokenFile != "":
+		*credFile = *tokenFile
+	case *credFile == "":
+		return errors.New("--credentials is required; create a credential with `tingly-shell keygen --label <device>`")
 	}
-	token, err := transport.LoadToken(*tokenFile)
+	creds, err := auth.LoadStore(*credFile)
 	if err != nil {
 		return err
 	}
@@ -145,16 +154,17 @@ func runServer(ctx context.Context, args []string) error {
 	log := common.logger()
 
 	cfg := bridge.ServerConfig{
-		Listen:      *listen,
-		Targets:     splitList(*targets),
-		Token:       token,
-		Window:      common.window,
-		MaxStreams:  common.maxStreams,
-		MaxSessions: *maxSess,
-		Linger:      common.linger,
-		Tuning:      common.tuning(),
-		TLS:         transport.ServerTLS(cert),
-		Logger:      log,
+		Listen:                   *listen,
+		Targets:                  splitList(*targets),
+		Credentials:              creds,
+		Window:                   common.window,
+		MaxStreams:               common.maxStreams,
+		MaxSessions:              *maxSess,
+		MaxSessionsPerCredential: *maxPerCred,
+		Linger:                   common.linger,
+		Tuning:                   common.tuning(),
+		TLS:                      transport.ServerTLS(cert),
+		Logger:                   log,
 	}
 	srv, err := bridge.NewServer(cfg)
 	if err != nil {
@@ -172,7 +182,14 @@ func runServer(ctx context.Context, args []string) error {
 		"max_streams_per_session", common.maxStreams,
 		"window_bytes", common.window,
 		"worst_case_memory_mib", cfg.WorstCaseMemory()/(1<<20))
+	if creds.Shared() {
+		log.Warn("credentials file holds one shared token: no per-device identity, revocation or attribution",
+			"fix", "give each device its own credential, see docs/adr/0004-client-identity.md")
+	} else {
+		log.Info("credentials loaded", "count", creds.Len(), "labels", strings.Join(creds.Labels(), ","))
+	}
 	log.Info("clients must pass this pin", "flag", "--pin "+pin)
+	go reloadOnSignal(ctx, srv, log)
 	return srv.Serve(ctx)
 }
 
@@ -290,13 +307,65 @@ func dropLinkOnSignal(ctx context.Context, cli *bridge.Client, log *slog.Logger)
 	}
 }
 
-func runKeygen() error {
+// reloadOnSignal re-reads the credentials file on SIGHUP, so revoking a device
+// does not need a restart (and therefore does not disturb other sessions).
+func reloadOnSignal(ctx context.Context, srv *bridge.Server, log *slog.Logger) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGHUP)
+	defer signal.Stop(ch)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ch:
+			if err := srv.ReloadCredentials(); err != nil {
+				// The previous set stays in place, so a typo cannot lock
+				// everyone out.
+				log.Error("credentials reload failed, keeping the previous set", "err", err)
+			}
+		}
+	}
+}
+
+func runKeygen(args []string) error {
+	fs := flag.NewFlagSet("keygen", flag.ExitOnError)
+	label := fs.String("label", "", "device label to identify this credential (recommended)")
+	expires := fs.String("expires", "", "expiry date, YYYY-MM-DD or RFC 3339 (default: never)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	var notAfter time.Time
+	if *expires != "" {
+		t, err := auth.ParseNotAfter(*expires)
+		if err != nil {
+			return err
+		}
+		notAfter = t
+	}
 	tok, err := transport.NewToken()
 	if err != nil {
 		return err
 	}
+	// The token goes to stdout so `keygen > token` still works; the record the
+	// operator has to install goes to stderr.
 	fmt.Println(tok)
-	fmt.Fprintln(os.Stderr, "write this to a file with mode 0600 on both ends, then pass --token-file")
+	name := *label
+	if name == "" {
+		name = "unnamed-device"
+	}
+	fmt.Fprintf(os.Stderr, `
+Give the token above to the device: write it to a file with mode 0600 and pass
+--token-file to the client.
+
+Add this line to the server's --credentials file (it holds only a hash, so the
+server never stores the secret), then send the server SIGHUP:
+
+%s
+
+`, auth.Record(name, []byte(tok), notAfter))
+	if *label == "" {
+		fmt.Fprintln(os.Stderr, "tip: pass --label <device> so logs and revocation can name this device")
+	}
 	return nil
 }
 

@@ -2,7 +2,6 @@ package bridge
 
 import (
 	"context"
-	"crypto/subtle"
 	"crypto/tls"
 	"errors"
 	"log/slog"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 
+	"github.com/0x0079/tingly-shell/internal/auth"
 	"github.com/0x0079/tingly-shell/internal/mux"
 	"github.com/0x0079/tingly-shell/internal/proto"
 	"github.com/0x0079/tingly-shell/internal/transport"
@@ -51,16 +51,21 @@ func (c ServerConfig) WorstCaseMemory() uint64 {
 
 // ServerConfig configures the sshd-side bridge.
 type ServerConfig struct {
-	Listen      string   // UDP address to listen on
-	Targets     []string // allowed TCP targets; the first one is the default
-	Token       []byte   // pre-shared token
+	Listen  string   // UDP address to listen on
+	Targets []string // allowed TCP targets; the first one is the default
+	// Credentials identifies clients by the token they present. When nil,
+	// Token is wrapped as a single shared credential.
+	Credentials *auth.Store
+	Token       []byte // pre-shared token, for callers that have no file
 	Window      uint64
 	MaxStreams  int
-	MaxSessions int           // concurrent sessions this server will hold
-	Linger      time.Duration // how long a session survives without a link
-	Tuning      transport.Tuning
-	TLS         *tls.Config
-	Logger      *slog.Logger
+	MaxSessions int // concurrent sessions this server will hold
+	// MaxSessionsPerCredential caps sessions per identity; 0 means unlimited.
+	MaxSessionsPerCredential int
+	Linger                   time.Duration // how long a session survives without a link
+	Tuning                   transport.Tuning
+	TLS                      *tls.Config
+	Logger                   *slog.Logger
 }
 
 // Server accepts QUIC links, resumes or creates sessions, and bridges each
@@ -87,6 +92,12 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 	if len(cfg.Targets) == 0 {
 		return nil, errors.New("bridge: server needs at least one target")
+	}
+	if cfg.Credentials == nil {
+		if len(cfg.Token) == 0 {
+			return nil, errors.New("bridge: server needs credentials or a token")
+		}
+		cfg.Credentials = auth.Single(cfg.Token)
 	}
 	ln, err := transport.Listen(cfg.Listen, cfg.TLS, cfg.Tuning)
 	if err != nil {
@@ -116,6 +127,18 @@ func (s *Server) linkedCount() int {
 
 // Addr reports the bound UDP address.
 func (s *Server) Addr() net.Addr { return s.ln.Addr() }
+
+// ReloadCredentials re-reads the credentials file. Revoking a device is
+// deleting its line and sending SIGHUP; established links are unaffected,
+// because a credential is only checked when a link is built
+// (docs/04-security-model.md §7).
+func (s *Server) ReloadCredentials() error {
+	if err := s.cfg.Credentials.Reload(); err != nil {
+		return err
+	}
+	s.log.Info("credentials reloaded", "count", s.cfg.Credentials.Len())
+	return nil
+}
 
 // Close stops accepting and terminates every live session.
 func (s *Server) Close() error {
@@ -224,9 +247,12 @@ func (s *Server) handleConn(ctx context.Context, conn *quic.Conn) error {
 		_ = pc.Close()
 		return err
 	}
+	// The credential label is the only attributable identity in the log: the
+	// target's sshd sees this server's address, not the user's (risk R-1).
 	s.log.Info("link accepted",
-		"session", hello.SessionID.Short(), "epoch", hello.Epoch,
-		"remote", conn.RemoteAddr().String(), "streams", len(hello.States))
+		"session", hello.SessionID.Short(), "credential", sess.Identity(),
+		"epoch", hello.Epoch, "remote", conn.RemoteAddr().String(),
+		"streams", len(hello.States))
 	return sess.Attach(pc, hello.Window, hello.States)
 }
 
@@ -248,13 +274,35 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 	if hello.Version != proto.Version {
 		return nil, &HandshakeError{Code: proto.CodeUnsupportedVersion, Reason: "unsupported protocol version"}
 	}
-	if subtle.ConstantTimeCompare(hello.Token, s.cfg.Token) != 1 {
-		return nil, &HandshakeError{Code: proto.CodeUnauthorized, Reason: "invalid token"}
+	cred, err := s.cfg.Credentials.Lookup(hello.Token)
+	if err != nil {
+		reason := "unknown credential"
+		if errors.Is(err, auth.ErrExpired) {
+			// Say which device and why: an expired credential otherwise looks
+			// like a mysterious rejection on the client side.
+			reason = "credential expired"
+		}
+		s.log.Warn("handshake refused", "reason", reason, "credential", cred.Label)
+		return nil, &HandshakeError{Code: proto.CodeUnauthorized, Reason: reason}
 	}
 
 	s.mu.Lock()
 	sess, known := s.sessions[hello.SessionID]
-	if !known {
+	if known {
+		// A session belongs to the credential that created it. Knowing a
+		// session id is not enough to take it over.
+		if sess.Identity() != cred.Label {
+			s.mu.Unlock()
+			s.log.Warn("refused a session takeover",
+				"session", hello.SessionID.Short(), "owner", sess.Identity(), "presented", cred.Label)
+			return nil, &HandshakeError{Code: proto.CodeUnauthorized, Reason: "session belongs to another credential"}
+		}
+	} else {
+		if n := s.cfg.MaxSessionsPerCredential; n > 0 && s.countForLocked(cred.Label) >= n {
+			s.mu.Unlock()
+			s.log.Warn("credential is at its session limit", "credential", cred.Label, "limit", n)
+			return nil, &HandshakeError{Code: proto.CodeResourceExhausted, Reason: "credential session limit reached"}
+		}
 		if len(s.sessions) >= s.cfg.MaxSessions && !s.evictOneDetachedLocked() {
 			s.mu.Unlock()
 			s.log.Warn("refused a new session at the limit",
@@ -270,6 +318,7 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 		sess = mux.New(mux.Config{
 			Role:       mux.RoleServer,
 			SessionID:  hello.SessionID,
+			Identity:   cred.Label,
 			Window:     s.cfg.Window,
 			MaxStreams: s.cfg.MaxStreams,
 			Logger:     s.cfg.Logger,
@@ -278,16 +327,18 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 		s.mu.Unlock()
 
 		go s.serveStreams(ctx, sess)
-		go func() {
+		go func(label string) {
 			<-sess.Done()
 			s.mu.Lock()
 			if cur := s.sessions[hello.SessionID]; cur == sess {
 				delete(s.sessions, hello.SessionID)
 			}
 			s.mu.Unlock()
-			s.log.Info("session closed", "session", hello.SessionID.Short(), "err", sess.Err())
-		}()
-	} else {
+			s.log.Info("session closed", "session", hello.SessionID.Short(),
+				"credential", label, "err", sess.Err())
+		}(cred.Label)
+	}
+	if known {
 		s.mu.Unlock()
 	}
 
@@ -295,6 +346,17 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 		return nil, &HandshakeError{Code: proto.CodeEpochStale, Reason: "a newer link already owns this session"}
 	}
 	return sess, nil
+}
+
+// countForLocked counts the sessions held by one credential.
+func (s *Server) countForLocked(label string) int {
+	n := 0
+	for _, sess := range s.sessions {
+		if sess.Identity() == label {
+			n++
+		}
+	}
+	return n
 }
 
 // evictOneDetachedLocked frees a slot by closing the session that has been

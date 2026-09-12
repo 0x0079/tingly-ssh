@@ -27,11 +27,13 @@ a connection that died and came back.**
 ```bash
 go build ./cmd/tingly-shell
 
-# Pre-shared token, identical on both ends, mode 0600
-./tingly-shell keygen > token && chmod 600 token
+# Mint a credential per device. The token goes to the device; the record line
+# printed on stderr goes into the server's credentials file, which only ever
+# holds a hash.
+./tingly-shell keygen --label laptop-mbp14 > token && chmod 600 token
 
 # Server, next to sshd. Its startup log prints pin=sha256:...
-./tingly-shell server --listen :7443 --target 127.0.0.1:22 --token-file token
+./tingly-shell server --listen :7443 --target 127.0.0.1:22 --credentials credentials
 
 # Client A: local port forward
 ./tingly-shell client --server SERVER:7443 --listen 127.0.0.1:2222 \
@@ -44,7 +46,9 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 
 `--pin` and `--token-file` answer different questions and you need both. The pin is the
 fingerprint of the server's public key, it is public and proves you reached the right
-server. The token is the actual secret and proves you are allowed in. Details and common
+server. The token is the actual secret and proves you are allowed in. Each device gets its
+own token, so one can be revoked by deleting its line and sending SIGHUP, sessions are
+bound to the credential that created them, and logs name the device. Details and common
 misconceptions: [`docs/04-security-model.md`](docs/04-security-model.md) §2.1. The same
 document carries the threat model (§6), what expires and when (§7), the risk register with
 what is fixed and what is not (§8), and a deployment hardening checklist (§9).

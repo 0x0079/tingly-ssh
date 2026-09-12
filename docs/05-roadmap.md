@@ -38,21 +38,20 @@
 
 安全项按 `04-security-model.md` §8 的编号排列，括号里是风险编号。
 
-- [ ] 客户端身份（ADR-0004，**待确认**）。方案 A 先做，方案 B 视需要再上：
-      - [ ] A：每设备 token，服务端凭据文件存 `sha256(token)` + label + 可选 `not-after`
-      - [ ] A：`keygen` 同时打印可粘贴进服务端文件的记录行
-      - [ ] A：SIGHUP 热加载凭据文件，撤销 = 删一行
-      - [ ] A：拒绝原因走 `HELLO_ACK`，带 label 与原因（凭据未授权 / 已过期）
+- [x] 客户端身份方案 A（ADR-0004 §8.1）：
+      - [x] 每设备 token，服务端凭据文件存 `sha256(token)` + label + 可选 `not-after`
+      - [x] `keygen --label/--expires` 打印 token 与可粘贴的服务端记录行
+      - [x] `SIGHUP` 热加载凭据文件，撤销 = 删一行；解析失败保留旧的一套
+      - [x] 拒绝原因走 `HELLO_ACK`（`unknown credential` / `credential expired`）
       - [ ] B（可选，高保障场景）：TLS 客户端证书白名单，凭据不上线
 - [x] ~~token 改为 HMAC 挑战-响应~~ → 评估后否决，见 ADR-0004
 - [x] `--max-sessions` + 驱逐最久未连接会话 + `RESOURCE_EXHAUSTED` 拒绝（R-3，内存 DoS）
-- [ ] 每凭据会话配额（R-3 余下部分，需要 M3 的客户端身份）
-- [ ] 会话绑定到创建它的凭据身份，杜绝同 token 下的会话接管（R-2，依赖 ADR-0004）
-- [ ] 凭据的有效期、标识与撤销（R-5）——由 ADR-0004 的客户端证书天然提供；
-      若 mTLS 暂不落地，则退化为"多 token + 有效期"的过渡方案
+- [x] 每凭据会话配额 `--max-sessions-per-credential`（R-3 余下部分）
+- [x] 会话绑定到创建它的凭据身份，杜绝会话接管（R-2）
+- [x] 凭据的有效期、标识与撤销（R-5）
 - [ ] 握手速率限制与认证失败告警（R-4）
 - [x] 自签证书默认有效期改为 825 天并文档化续期（R-6）
-- [ ] 服务端日志补齐审计字段，补偿源 IP 遮蔽（R-1）
+- [x] 服务端日志带 `credential=<label>`，部分补偿源 IP 遮蔽（R-1；完整方案仍需接 SIEM）
 - [ ] 按客户端身份路由多个 target（白名单 → 策略）
 - [ ] 结构化指标（Prometheus：重连次数、重放字节、RTT、窗口阻塞时长）
 - [ ] systemd unit / launchd plist / Windows 服务封装
