@@ -72,8 +72,11 @@ v0 的 token 是 **bearer token over TLS**（等价于 HTTP `Authorization: Bear
 - `--insecure` 会跳过证书校验：此时 token 可被中间人窃取。
   该选项仅供本机开发，文档与启动日志都会显式告警。
 
-M3 计划改为挑战-响应：服务端在 `HELLO_ACK` 前发送 nonce，客户端回 `HMAC(token, nonce || session_id || epoch)`，
-使 token 本身不再上线。见 `05-roadmap.md`。
+~~M3 计划改为挑战-响应~~ —— **这个方向已被重新评估并否决**，见
+[`adr/0004-client-identity.md`](adr/0004-client-identity.md)：在 TLS 1.3 之上再套挑战-响应
+收益接近零（TLS 已提供服务端认证、机密性与前向保密，且未启用 0-RTT），而真正缺的是
+**客户端身份**。M3 的方向改为 TLS 客户端证书白名单（对齐 SSH `authorized_keys`），
+一次解决 R-2 会话绑定、R-3 每凭据配额、R-5 撤销与过期、R-1 审计可归因。
 
 ## 4. 密钥与证书管理
 

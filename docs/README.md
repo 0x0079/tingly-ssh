@@ -34,6 +34,7 @@ sshd
 | [adr/0001-transport-choice.md](adr/0001-transport-choice.md) | 为什么选 QUIC bridge 而不是 MPTCP / 改 SSH | 已接受 |
 | [adr/0002-resumable-session-layer.md](adr/0002-resumable-session-layer.md) | 为什么在 QUIC 之上再加一层会话层 | 已接受 |
 | [adr/0003-library-choices.md](adr/0003-library-choices.md) | 依赖选型：quic-go / quicvarint / 标准库 | 已接受 |
+| [adr/0004-client-identity.md](adr/0004-client-identity.md) | 客户端身份：mTLS 而非自研 HMAC 挑战-响应 | **提议中** |
 
 ## 文档驱动的工作方式
 
