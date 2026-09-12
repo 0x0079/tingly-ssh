@@ -45,7 +45,9 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 `--pin` and `--token-file` answer different questions and you need both. The pin is the
 fingerprint of the server's public key, it is public and proves you reached the right
 server. The token is the actual secret and proves you are allowed in. Details and common
-misconceptions: [`docs/04-security-model.md`](docs/04-security-model.md) §2.1.
+misconceptions: [`docs/04-security-model.md`](docs/04-security-model.md) §2.1. The same
+document carries the threat model (§6), what expires and when (§7), the risk register with
+what is fixed and what is not (§8), and a deployment hardening checklist (§9).
 
 **Jump hosts** (`laptop → jump host → target`, with **no changes on the jump host**):
 tunnel the first hop and use stock OpenSSH `ProxyJump` for the rest. Only the first hop
