@@ -16,7 +16,7 @@ frame := frame_len(varint) || type(varint) || payload
 
 | type | 名称 | payload |
 | --- | --- | --- |
-| 0x01 | `HELLO` | `version(v) session_id(16B) epoch(v) window(v) token(bytes) n(v) state×n` |
+| 0x01 | `HELLO` | `version(v) session_id(16B) epoch(v) flags(v) window(v) token(bytes) n(v) state×n` |
 | 0x02 | `HELLO_ACK` | `code(v) reason(bytes) window(v) n(v) state×n` |
 | 0x03 | `OPEN` | `stream_id(v) target(bytes)` |
 | 0x04 | `DATA` | `stream_id(v) offset(v) data(bytes)` |
@@ -45,11 +45,20 @@ state := stream_id(v) recv_offset(v) read_offset(v) flags(v) target(bytes)
 
 ```
 client                                   server
-  │ ── HELLO{version, session_id, epoch, window, token, states} ──▶
+  │ ── HELLO{version, session_id, epoch, flags, window, token, states} ──▶
   │                                        验证 version / token
   │ ◀── HELLO_ACK{code=0, window, states} ──
   │  双方按 §3 对齐并开始收发
 ```
+
+`HELLO.flags` bit0 `RESUME`：客户端声明"这个 session 服务端应当已经知道"（本会话此前至少成功握手过一次）。
+服务端据此区分两种情况，**不能用 states 是否为空来判断**：应用可能在第一条 Link 建立之前就打开了流。
+
+| 服务端状态 | `RESUME` | 动作 |
+| --- | --- | --- |
+| 未知 session | 0 | 新建 session；HELLO 里的 states 由客户端重放 `OPEN` 补齐 |
+| 未知 session | 1 | 回 `SESSION_UNKNOWN`（通常是服务端重启过） |
+| 已知 session | 任意 | 按 `epoch` 决定接管或 `EPOCH_STALE` |
 
 `HELLO_ACK.code`：
 

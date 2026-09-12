@@ -24,6 +24,7 @@ type Hello struct {
 	Version   uint64
 	SessionID SessionID
 	Epoch     uint64
+	Flags     uint64
 	Window    uint64
 	Token     []byte
 	States    []StreamState
@@ -119,6 +120,7 @@ func (f *Hello) appendPayload(b []byte) []byte {
 	b = quicvarint.Append(b, f.Version)
 	b = append(b, f.SessionID[:]...)
 	b = quicvarint.Append(b, f.Epoch)
+	b = quicvarint.Append(b, f.Flags)
 	b = quicvarint.Append(b, f.Window)
 	b = appendBytes(b, f.Token)
 	return appendStates(b, f.States)
@@ -282,6 +284,7 @@ func ParseFrame(body []byte) (Frame, error) {
 			copy(h.SessionID[:], id)
 		}
 		h.Epoch = p.varint()
+		h.Flags = p.varint()
 		h.Window = p.varint()
 		h.Token = p.bytesField()
 		h.States = p.states()

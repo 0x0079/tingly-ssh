@@ -333,6 +333,7 @@ func (s *Session) Attach(conn *proto.Conn, peerWindow uint64, peerStates []proto
 	}
 	s.linkGen++
 	ls := &linkState{conn: conn, gen: s.linkGen, dead: make(chan struct{})}
+	superseded := s.link // a reconnect may race with a link we still believe in
 	s.link = conn
 	s.peerWindow = peerWindow
 	if err := s.alignLocked(peerStates); err != nil {
@@ -346,6 +347,12 @@ func (s *Session) Attach(conn *proto.Conn, peerWindow uint64, peerStates []proto
 	s.cond.Broadcast()
 	s.notifyLocked()
 	s.mu.Unlock()
+
+	if superseded != nil {
+		// Tear down the old link so its loops cannot interleave frames with
+		// the new one. They observe the generation change and exit.
+		_ = superseded.Close()
+	}
 
 	s.log.Info("link attached", "gen", ls.gen, "streams", len(peerStates), "replay_bytes", replay)
 
@@ -439,4 +446,21 @@ func (s *Session) alignLocked(peerStates []proto.StreamState) error {
 		}
 	}
 	return nil
+}
+
+// DropLink closes the current link, forcing the client supervisor to build a
+// new one. It reports whether a link was attached.
+//
+// Tests use it for fault injection; a client can also use it when the OS
+// reports that the default route changed, to re-home the session immediately
+// instead of waiting for the old path to time out.
+func (s *Session) DropLink() bool {
+	s.mu.Lock()
+	link := s.link
+	s.mu.Unlock()
+	if link == nil {
+		return false
+	}
+	_ = link.Close()
+	return true
 }
