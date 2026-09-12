@@ -42,8 +42,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: install openssh and rsync
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openssh-server openssh-client rsync
+      - name: install openssh, rsync and tmux
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openssh-server openssh-client rsync tmux
       - run: ./test/scenarios/run.sh
       - uses: actions/upload-artifact@v4
         if: always()

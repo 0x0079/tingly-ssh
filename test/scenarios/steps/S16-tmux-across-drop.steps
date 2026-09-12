@@ -1,0 +1,10 @@
+# Output keeps scrolling inside tmux while the link underneath is destroyed.
+# The harness drops the link between S16.ready and S16.proceed.
+expect "[$#] $|[$#]$"
+send "for i in $(seq 1 60); do echo tick-$i; sleep 0.5; done"
+expect "tick-3"
+touch @ART@/S16.ready
+waitfile @ART@/S16.proceed 180
+expect "tick-25"
+sendraw 02 64
+expect_exit 0

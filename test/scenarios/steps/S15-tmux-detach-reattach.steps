@@ -1,0 +1,7 @@
+# tmux: run something, detach with the prefix key, and leave the session alive
+# on the far side. Ctrl-B is 0x02, 'd' is 0x64.
+expect "[$#] $|[$#]$"
+send "echo S15-IN-$((20+22))"
+expect "S15-IN-42"
+sendraw 02 64
+expect_exit 0

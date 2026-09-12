@@ -81,7 +81,7 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 ```bash
 go test -race ./...              # 单元 + 会话层故障注入 + 真 QUIC
 ./test/e2e/run.sh                # 真 sshd + 真 ssh/scp 端到端（13 个用例）
-./test/scenarios/run.sh          # 日常 SSH 使用场景（14 个用例）
+./test/scenarios/run.sh          # 日常 SSH 使用场景（17 个用例）
 ./test/roaming/selftest.sh       # 漫游套件 + 模拟故障，自证 harness（7 个用例）
 ./test/roaming/run.sh            # 同一套件跑真实部署与真实无线电
 ```
@@ -94,7 +94,9 @@ go test -race ./...              # 单元 + 会话层故障注入 + 真 QUIC
   链路销毁、30 秒网络黑洞、linger 超时、token 与 pin 拒绝、跳板机两跳。
 - **日常 SSH**（`test/scenarios/`）：真 pty 上的交互式 shell、断链前后在同一个 shell 里
   继续敲命令、32 MiB 标准输出、全部 256 种字节值、Ctrl-C、窗口尺寸变化、
-  `-L`/`-R`/`-D` 转发、sftp、rsync、以及 ControlMaster 复用只占一条隧道流。
+  `-L`/`-R`/`-D` 转发、sftp、rsync、ControlMaster 复用只占一条隧道流，
+  以及三个 tmux 用例把两件事分清：隧道让 tmux 会话在链路被销毁时不用重新 attach，
+  tmux 兜住连接彻底死掉时远端的工作。
 - **漫游**（`test/roaming/`）：离开与回到网络、linger 两侧的断网、NAT 空闲、
   传输中途换网、服务端重启。远端心跳让结果可判定：计数器连续性证明字节流没被破坏，
   最大到达间隔就是终端实际卡顿的时长。无线电通过 nmcli 或 macOS 自动控制，

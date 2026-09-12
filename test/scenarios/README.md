@@ -25,6 +25,9 @@
 | S12 | ControlMaster 复用 | 3 个会话只占 **1 条**隧道流 |
 | S13 | 空闲后仍可用 | 空闲后交互式 shell 继续响应 |
 | S14 | rsync over ssh | 8 MiB，sha256 一致（未装 rsync 则 SKIP） |
+| S15 | tmux 分离/重连 | Ctrl-B d 分离后会话存活，pane 内容保留 |
+| S16 | **tmux 会话中链路被销毁** | 断链期间 tmux 里的输出继续，不需要重新 attach |
+| S17 | **tmux 扛住连接彻底死掉** | ssh 被 SIGKILL 后远端工作继续，会话可重连 |
 
 ## 交互式用例怎么写
 
@@ -45,5 +48,14 @@ expect_exit 0
 什么都证明不了。写成 `echo MARK-$((20+22))` 后，回显里是表达式、输出里才是 `MARK-42`，
 断言才真正检查了远端执行结果。这个坑在 S6 上真实发生过一次。
 
-依赖：`ssh`、`/usr/sbin/sshd`、`python3`（驱动 pty）、可选 `rsync`。
+## tmux：谁在起作用要分清
+
+| 用例 | 谁救了你 |
+| --- | --- |
+| S16 | **隧道**：链路被销毁期间会话不断，用户只看到短暂停顿，不用重新 attach |
+| S17 | **tmux**：连接彻底死透（ssh 被 SIGKILL），远端工作照常推进，回来重连 |
+
+两者叠加才是完整的日常工作流：隧道让绝大多数网络抖动不打断你，tmux 兜住剩下的极端情况。
+
+依赖：`ssh`、`/usr/sbin/sshd`、`python3`（驱动 pty）、可选 `rsync`、可选 `tmux`。
 结果与全部日志、transcript 归档在 `artifacts/<时间戳>/`。
