@@ -48,6 +48,8 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 `--pin` 和 `--token-file` 回答的是两个不同的问题，两个都要配。pin 是服务端公钥的指纹，
 公开信息，证明"连对了机器"；token 才是真正的密码，证明"你有资格接入"。
 区别与常见误区见 [`docs/04-security-model.md`](docs/04-security-model.md) §2.1。
+同一份文档还有威胁模型（§6）、各类凭据的生命周期与有效期（§7）、
+已知风险清单与处置状态（§8）、部署加固清单（§9）。
 
 关键参数：`--session-linger`（断网可恢复时长，默认 60s）、`--window`（每流窗口，
 同时决定重放内存上界）、`--idle-timeout` / `--keepalive`（多快判定链路已死）。
