@@ -27,7 +27,7 @@
 
 ## 2. L4 用例表（自动，`test/e2e/run.sh`）
 
-环境由脚本自建：专用 sshd（端口 2022，自带 host key 与 authorized_keys）、
+环境由脚本自建：两个专用 sshd（2022 扮演跳板机、2224 扮演其后的目标机，各自独立配置与 host key）、
 一个 TCP 回显服务（2023）、隧道服务端（udp 7450）、按需启动的隧道客户端（2300+）。
 
 | ID | 名称 | 步骤要点 | 通过标准 |
@@ -43,6 +43,8 @@
 | E9 | 超过 linger 的断网 | linger 5s，冻结 25s | ssh **明确失败**且不挂死；日志出现 `giving up on session` |
 | E10 | token 错误 | 用错误 token 启动客户端 | 立即失败（0 次重试），日志给出 `unauthorized` 原因 |
 | E11 | 证书 pin 不匹配 | 用随机 pin 启动客户端 | 握手被拒，日志给出 `pin mismatch` |
+| E12 | 跳板机两跳 | `ssh -J` 经未改动的跳板机到目标机，第一跳走隧道 | 目标机上的命令输出正确 |
+| E13 | 两跳会话中断链 | 两跳会话进行中两次 `kill -USR1` | 目标机输出 20/20 行，2 次强制断链 |
 
 运行方式：
 
@@ -83,10 +85,10 @@ test/e2e/artifacts/<时间戳>/
 
 ### 3.1 最近一次归档结果
 
-- run: 20260912-072740
+- run: 20260912-074336
 - host: Linux 6.18.44-fc-v24 x86_64
 - go: go1.26.0
-- commit: 1cccf5e
+- commit: 3832f40
 - ssh: OpenSSH_9.6p1 Ubuntu-3ubuntu13.19
 
 | case | result | note |
@@ -95,16 +97,19 @@ test/e2e/artifacts/<时间戳>/
 | E2 | PASS | ssh -o ProxyCommand reached sshd as root |
 | E3 | PASS | ssh -p 2301 through the local listener |
 | E4 | PASS | 200000 bytes over stdin, EOF propagated |
-| E5 | PASS | 8 MiB scp, sha256 43ae6af16977 |
+| E5 | PASS | 8 MiB scp, sha256 ac10dfc55203 |
 | E6 | PASS | 3 concurrent ssh sessions as 3 streams of 1 session |
 | E7 | PASS | 20/20 lines across 2 forced link failures (3 links) |
 | E8 | PASS | 55/55 lines across a 30s outage (1 link losses, 2 links) |
 | E9 | PASS | gave up after the 5s linger; ssh failed cleanly in 28s with 3 lines |
 | E10 | PASS | refused as unauthorized in 0s, no retries |
-| E11 | PASS | pinned handshake refused, client exited in 7s |
+| E11 | PASS | pinned handshake refused, client exited in 8s |
+| E12 | PASS | ssh -J through an unmodified jump host, over the tunnel |
+| E13 | PASS | two hop session survived 2 first-hop link failures |
 
 > 说明：E8 的判定要求日志里确实出现过 `link lost`，因此 "1 link losses, 2 links"
 > 证明 30 秒黑洞真的杀死了 QUIC 连接，会话是**重连后重放恢复**的，而不是碰巧没断。
+> E12/E13 用两个独立 sshd 实例（跳板机 + 其后的目标机）验证多跳，跳板机侧零改动。
 
 ## 4. L5 真机漫游验收（手工，结论回填此表）
 

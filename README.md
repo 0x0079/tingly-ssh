@@ -39,6 +39,10 @@ ssh -p 2222 user@127.0.0.1
 ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
 ```
 
+跳板机场景（`笔记本 → 跳板机 → 目标机`，**跳板机零改动**）：把第一跳套进隧道，
+其余照常用 OpenSSH 的 `ProxyJump`。只有第一跳会因为换网而断，保护它就够了。
+配置片段与边界条件见 [`docs/08-jump-host-topologies.md`](docs/08-jump-host-topologies.md)。
+
 关键参数：`--session-linger`（断网可恢复时长，默认 60s）、`--window`（每流窗口，
 同时决定重放内存上界）、`--idle-timeout` / `--keepalive`（多快判定链路已死）。
 

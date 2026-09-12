@@ -30,6 +30,7 @@ sshd
 | [05-roadmap.md](05-roadmap.md) | 里程碑 M0..M5 与当前进度 | 持续更新 |
 | [06-testing.md](06-testing.md) | 测试分层、故障注入手法 | 持续更新 |
 | [07-verification-plan.md](07-verification-plan.md) | **验收清单**：L0–L5 用例表、判定标准、归档方式 | 持续更新 |
+| [08-jump-host-topologies.md](08-jump-host-topologies.md) | 跳板机/多跳场景：server 放哪、ssh 配置片段、做不到的情况 | 已定稿 (v0) |
 | [adr/0001-transport-choice.md](adr/0001-transport-choice.md) | 为什么选 QUIC bridge 而不是 MPTCP / 改 SSH | 已接受 |
 | [adr/0002-resumable-session-layer.md](adr/0002-resumable-session-layer.md) | 为什么在 QUIC 之上再加一层会话层 | 已接受 |
 | [adr/0003-library-choices.md](adr/0003-library-choices.md) | 依赖选型：quic-go / quicvarint / 标准库 | 已接受 |
