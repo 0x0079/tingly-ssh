@@ -109,7 +109,27 @@ S17 踩过一个坑：最初用 `pkill -f "<会话名>"` 杀客户端，结果�
 （同机测试时会话名出现在多个进程的命令行里），于是"工作继续"变成了假失败。
 现在只按驱动进程和本套件的 ssh 命令行精确匹配。
 
-### 3.2 交互式断言的一个陷阱（踩过）
+### 3.2 只有 CI 能抓到的一类失败（踩过）
+
+S12（ControlMaster 复用）在本地一直通过，在 CI 上必然失败：
+
+```
+unix_listener: path ".../artifacts/<run>/S12.sock.2WzkaW5RbrAHkUjg" too long for Unix domain socket
+```
+
+Unix domain socket 路径上限约 104 字节，ssh 在启动 master 期间还会追加 17 字符随机后缀。
+CI runner 的检出路径（`/home/runner/work/<repo>/<repo>/…`）比开发机长，于是越界。
+控制 socket 因此必须放在 `mktemp -d` 的短目录里，不能放进 `$ART`。
+
+这类"只在别的路径长度/环境下才失败"的问题，正是把套件接进 CI 的价值：
+本地全绿不等于可移植。修复流程也照规矩走——**先用长 `ART_DIR` 在本地复现**，
+再改，再用同一个长路径验证通过。
+
+顺带暴露了 harness 会挂死而不是失败的一个缺陷：`ssh-keygen` 没有 force 参数，
+复用 artifacts 目录时它会提示覆盖并无限等待 stdin。现在生成前先删旧文件并把 stdin
+接到 `/dev/null`。
+
+### 3.3 交互式断言的一个陷阱（踩过）
 
 终端会回显输入的命令，所以 `expect "MARK"` 会匹配到**自己的回显**，什么都没验证。
 步骤脚本因此统一用算术标记：输入 `echo MARK-$((20+22))`，回显里是表达式、
@@ -181,10 +201,10 @@ test/e2e/artifacts/<时间戳>/
 
 ### 5.1 最近一次归档结果（L4 套件）
 
-- run: 20260912-074336
+- run: 20260912-141308
 - host: Linux 6.18.44-fc-v24 x86_64
 - go: go1.26.0
-- commit: 3832f40
+- commit: f0106d3
 - ssh: OpenSSH_9.6p1 Ubuntu-3ubuntu13.19
 
 | case | result | note |
@@ -193,7 +213,7 @@ test/e2e/artifacts/<时间戳>/
 | E2 | PASS | ssh -o ProxyCommand reached sshd as root |
 | E3 | PASS | ssh -p 2301 through the local listener |
 | E4 | PASS | 200000 bytes over stdin, EOF propagated |
-| E5 | PASS | 8 MiB scp, sha256 ac10dfc55203 |
+| E5 | PASS | 8 MiB scp, sha256 a305f1fc02e9 |
 | E6 | PASS | 3 concurrent ssh sessions as 3 streams of 1 session |
 | E7 | PASS | 20/20 lines across 2 forced link failures (3 links) |
 | E8 | PASS | 55/55 lines across a 30s outage (1 link losses, 2 links) |
@@ -202,23 +222,24 @@ test/e2e/artifacts/<时间戳>/
 | E11 | PASS | pinned handshake refused, client exited in 8s |
 | E12 | PASS | ssh -J through an unmodified jump host, over the tunnel |
 | E13 | PASS | two hop session survived 2 first-hop link failures |
+| E14 | PASS | two devices admitted and attributed, revoked one refused in 0s |
 
-> 说明：E8 的判定要求日志里确实出现过 `link lost`，因此 "1 link losses, 2 links"
-> 证明 30 秒黑洞真的杀死了 QUIC 连接，会话是**重连后重放恢复**的，而不是碰巧没断。
-> E12/E13 用两个独立 sshd 实例（跳板机 + 其后的目标机）验证多跳，跳板机侧零改动。
+> E8 的判定要求日志里确实出现过 `link lost`，所以那一行的数字证明 30 秒黑洞真的杀死了
+> QUIC 连接，会话是**重连后重放恢复**的，而不是碰巧没断。E12/E13 用两个独立 sshd
+> 实例验证多跳，跳板机侧零改动。E14 覆盖每设备凭据与撤销。
 
 ### 5.2 最近一次归档结果（L5 场景套件）
 
-- run: 20260912-085128
+- run: 20260912-141506
 - host: Linux 6.18.44-fc-v24 x86_64
-- commit: 3022ed5
+- commit: f0106d3
 - ssh: OpenSSH_9.6p1 Ubuntu-3ubuntu13.19
 
-| case |result | note |
+| case | result | note |
 | --- | --- | --- |
 | S1 | PASS | interactive shell with a real tty, clean exit |
 | S2 | PASS | typed before and after 2 link failures in one shell |
-| S3 | PASS | 32 MiB of stdout, sha256 c53888da4952 |
+| S3 | PASS | 32 MiB of stdout, sha256 564e1971cb2c |
 | S4 | PASS | all 256 byte values round tripped unchanged |
 | S5 | PASS | streams separate, exit status 42 propagated |
 | S6 | PASS | Ctrl-C killed the remote sleep, shell survived |
@@ -226,37 +247,47 @@ test/e2e/artifacts/<时间戳>/
 | S8 | PASS | ssh -L carried a TCP service over the tunnel |
 | S9 | PASS | ssh -R reached back through the tunnel |
 | S10 | PASS | ssh -D SOCKS5 proxied through the tunnel |
-| S11 | PASS | sftp put and get, 4 MiB, sha256 b873a4db40fd |
+| S11 | PASS | sftp put and get, 4 MiB, sha256 f5f485681832 |
 | S12 | PASS | 3 multiplexed sessions over 1 tunnel stream |
 | S13 | PASS | shell still responsive after 30s idle |
-| S14 | PASS | rsync over ssh, 8 MiB, sha256 b6bd90ebb84e |
+| S14 | PASS | rsync over ssh, 8 MiB, sha256 3d9eef74f043 |
 | S15 | PASS | detached with Ctrl-B d, session and pane content survived |
 | S16 | PASS | tmux output continued across 2 link failures |
-| S17 | PASS | work kept running after a hard kill (24 -> 56 lines), pane reattachable |
+| S17 | PASS | work kept running after a hard kill (22 -> 54 lines), pane reattachable |
 
 ### 5.3 最近一次归档结果（L6 漫游套件，`selftest.sh` / NET_CTL=sim）
 
-- run: 20260912-083810
+- run: 20260912-141614
 - host: Linux 6.18.44-fc-v24 x86_64
 - network controller: sim
 - server: 127.0.0.1:7470  target: 127.0.0.1:2042
 - client flags: --session-linger 15s --idle-timeout 8s --keepalive 2s
 - thresholds: max stall 15s, outage 12s, idle 20s
-- commit: 6af2b9c
+- commit: f0106d3
 
 | case | result | note |
 | --- | --- | --- |
 | R1 | PASS | survived, froze 0.2s, 62 lines after the event, 1 link loss(es), 2 links |
 | R2 | PASS | survived, froze 0.2s, 62 lines after the event, 1 link loss(es), 2 links |
-| R3 | PASS | survived, froze 12.1s, 121 lines after the event, 1 link loss(es), 2 links |
+| R3 | PASS | survived, froze 12.2s, 122 lines after the event, 1 link loss(es), 2 links |
 | R4 | PASS | gave up after the 15s linger, ssh failed cleanly in 45s |
 | R5 | PASS | path held through 20s idle, no reconnect |
-| R6 | PASS | 8 MiB transfer crossed a network change, sha256 a582b1534202 |
+| R6 | PASS | 8 MiB transfer crossed a network change, sha256 f08437afad0e |
 | R7 | PASS | server said it was shutting down, client stopped cleanly |
 
-> R1/R2/R3 的 note 里写明了是"迁移"还是"重连"，以及实测卡顿秒数。sim 控制器下
-> R2 出现过 0.2s 卡顿、1 次链路重建，说明一次完整的销毁加重连对用户几乎不可见。
-> 真机数字请用 `./test/roaming/run.sh` 重跑后替换本节。
+> note 里写明了每次是"迁移"还是"重连"，以及实测卡顿秒数。真机数字请用
+> `./test/roaming/run.sh` 重跑后替换本节。
+
+### 5.4 CI
+
+`.github/workflows/ci.yml` 在每次 push 与 PR 上跑四个 job，并上传各自的 artifacts：
+
+| job | 内容 | 典型耗时 |
+| --- | --- | --- |
+| `unit` | `gofmt -l`、`go vet`、`go test -race` | ~25s |
+| `e2e` | `./test/e2e/run.sh`（真 sshd） | ~2.5min |
+| `scenarios` | `./test/scenarios/run.sh`（含 pty、tmux、rsync） | ~1.7min |
+| `roaming-harness` | `./test/roaming/selftest.sh`（NET_CTL=sim） | ~3min |
 
 ## 6. 回归门槛
 

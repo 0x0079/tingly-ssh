@@ -94,7 +94,7 @@ library; the reasoning is in ADR-0003.
 
 ```bash
 go test -race ./...              # unit, session-layer fault injection, real QUIC
-./test/e2e/run.sh                # real sshd with real ssh/scp (13 cases)
+./test/e2e/run.sh                # real sshd with real ssh/scp (14 cases)
 ./test/scenarios/run.sh          # everyday SSH usage (17 cases)
 ./test/roaming/selftest.sh       # the roaming suite against simulated faults (7 cases)
 ./test/roaming/run.sh            # the same suite against a real deployment and real radios
@@ -108,7 +108,8 @@ results table are archived per run under each suite's `artifacts/`.
   recovered byte stream is compared byte for byte.
 - **End to end** (`test/e2e/`): ProxyCommand, local port, stdin EOF, scp integrity,
   concurrent sessions, link destruction, a 30s network black hole, the linger deadline,
-  refused token and pin, and a two hop chain through an unmodified jump host.
+  refused token and pin, a two hop chain through an unmodified jump host, and per-device
+  credentials with revocation.
 - **Everyday SSH** (`test/scenarios/`): an interactive shell on a real pty, typing before
   and after the link is destroyed, 32 MiB of stdout, all 256 byte values, Ctrl-C, window
   resize, `-L`/`-R`/`-D` forwarding, sftp, rsync, ControlMaster multiplexing proven to
