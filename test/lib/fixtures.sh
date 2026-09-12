@@ -29,7 +29,10 @@ make_token() {
 make_ssh_keys() {
     SSH_KEYS=$ART/sshd
     mkdir -p "$SSH_KEYS"
-    ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEYS/id_ed25519" -C tingly-e2e || die "client key"
+    # ssh-keygen has no force flag: it prompts to overwrite and would hang
+    # forever on a reused artifacts directory.
+    rm -f "$SSH_KEYS/id_ed25519" "$SSH_KEYS/id_ed25519.pub"
+    ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEYS/id_ed25519" -C tingly-e2e </dev/null || die "client key"
     cp "$SSH_KEYS/id_ed25519.pub" "$SSH_KEYS/authorized_keys"
     chmod 600 "$SSH_KEYS/authorized_keys" "$SSH_KEYS/id_ed25519"
 }
@@ -42,7 +45,8 @@ start_sshd() {
     require_port_free "$port" "sshd $name"
     local dir=$ART/sshd-$name
     mkdir -p "$dir" /run/sshd
-    ssh-keygen -q -t ed25519 -N '' -f "$dir/host_ed25519" || die "host key"
+    rm -f "$dir/host_ed25519" "$dir/host_ed25519.pub"
+    ssh-keygen -q -t ed25519 -N '' -f "$dir/host_ed25519" </dev/null || die "host key"
     cat > "$dir/sshd_config" <<EOF
 Port $port
 ListenAddress 127.0.0.1
