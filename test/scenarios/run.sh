@@ -270,7 +270,13 @@ EOF
 # S12 ControlMaster multiplexing: many sessions, one TCP connection
 # ---------------------------------------------------------------------------
 case_S12() {
-    local sock=$ART/S12.sock before after ok=1 i
+    # The control socket cannot live under $ART: a Unix domain socket path is
+    # limited to about 104 bytes, ssh appends a 17 character random suffix
+    # while the master starts up, and a deep checkout path (a CI runner's, for
+    # instance) pushes it over the limit.
+    local sockdir sock before after ok=1 i
+    sockdir=$(mktemp -d /tmp/tingly-s12-XXXXXX) || { record S12 FAIL "mktemp"; return; }
+    sock=$sockdir/s
     before=$(grep -c 'local connection bridged' "$MAIN_LOG")
     timeout 60 ssh -F "$ART/ssh_config" -p "$MAIN_PORT" -M -S "$sock" -N -f tingly-local \
         > "$ART/S12.err" 2>&1 || { record S12 FAIL "master failed: $(head -c 200 "$ART/S12.err")"; return; }
@@ -279,6 +285,7 @@ case_S12() {
     done
     after=$(grep -c 'local connection bridged' "$MAIN_LOG")
     timeout 30 ssh -F "$ART/ssh_config" -S "$sock" -O exit tingly-local >/dev/null 2>&1
+    rm -rf "$sockdir"
     # The master opens exactly one TCP connection; the three sessions ride it.
     if [ $ok -eq 1 ] && [ $((after-before)) -eq 1 ]; then
         record S12 PASS "3 multiplexed sessions over 1 tunnel stream"
