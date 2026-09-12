@@ -87,7 +87,7 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 
 ```bash
 go test -race ./...              # 单元 + 会话层故障注入 + 真 QUIC
-./test/e2e/run.sh                # 真 sshd + 真 ssh/scp 端到端（13 个用例）
+./test/e2e/run.sh                # 真 sshd + 真 ssh/scp 端到端（14 个用例）
 ./test/scenarios/run.sh          # 日常 SSH 使用场景（17 个用例）
 ./test/roaming/selftest.sh       # 漫游套件 + 模拟故障，自证 harness（7 个用例）
 ./test/roaming/run.sh            # 同一套件跑真实部署与真实无线电
@@ -98,7 +98,8 @@ go test -race ./...              # 单元 + 会话层故障注入 + 真 QUIC
 
 - **会话层**：用 `net.Pipe` 做链路，在传输途中反复切断，逐字节比对恢复后的数据流。
 - **端到端**（`test/e2e/`）：ProxyCommand、本地端口、stdin EOF、scp 完整性、并发会话、
-  链路销毁、30 秒网络黑洞、linger 超时、token 与 pin 拒绝、跳板机两跳。
+  链路销毁、30 秒网络黑洞、linger 超时、token 与 pin 拒绝、跳板机两跳、
+  每设备凭据与撤销。
 - **日常 SSH**（`test/scenarios/`）：真 pty 上的交互式 shell、断链前后在同一个 shell 里
   继续敲命令、32 MiB 标准输出、全部 256 种字节值、Ctrl-C、窗口尺寸变化、
   `-L`/`-R`/`-D` 转发、sftp、rsync、ControlMaster 复用只占一条隧道流，
