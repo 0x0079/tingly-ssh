@@ -22,7 +22,8 @@
 - [x] 端到端测试：QUIC 上跑真实 TCP 回环，含强制断链后恢复
 - [x] CLI：`server` / `client` / `proxy` / `keygen`，客户端 `SIGUSR1` 主动换链路
 - [x] 握手拒绝原因可达：refusal 帧先落地再关连接，客户端不再把"token 错"当成"网络断"
-- [x] 真实 SSH 端到端验证套件 `test/e2e/`（E1–E11，见 `07-verification-plan.md`）
+- [x] 真实 SSH 端到端验证套件 `test/e2e/`（E1–E13，见 `07-verification-plan.md`）
+- [x] 跳板机多跳场景：与 `ProxyJump` 组合，跳板机零改动（`08-jump-host-topologies.md`，E12/E13）
 
 ## M3 · 生产加固（未开始）
 - [ ] token 改为 HMAC 挑战-响应（`04-security-model.md` §3）
@@ -40,5 +41,6 @@
 ## M5 · 性能与扩展（未开始）
 - [ ] 多 QUIC 流承载（分流重放）以消除帧级排队，benchmark 对比
 - [ ] 0-RTT 重连（需评估重放攻击面）
+- [ ] TCP 承载兜底（UDP 被封时换一层 Link；会话层已与承载解耦）
 - [ ] 评估 multipath QUIC（Wi-Fi + 蜂窝聚合），跟踪 IETF 进展
 - [ ] UDP 转发（DNS/QUIC 穿透）与 `-D` SOCKS 场景压测

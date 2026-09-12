@@ -9,7 +9,8 @@ BIN=${TINGLY_BIN:-$REPO_ROOT/test/e2e/.bin/tingly-shell}
 RUN_ID=$(date +%Y%m%d-%H%M%S)
 ART=${ART_DIR:-$REPO_ROOT/test/e2e/artifacts/$RUN_ID}
 
-SSHD_PORT=${SSHD_PORT:-2022}
+SSHD_PORT=${SSHD_PORT:-2022}          # stands in for the jump host
+TARGET_SSHD_PORT=${TARGET_SSHD_PORT:-2224}  # stands in for the machine behind it
 TUNNEL_PORT=${TUNNEL_PORT:-7450}
 ECHO_PORT=${ECHO_PORT:-2023}
 NEXT_CLIENT_PORT=${NEXT_CLIENT_PORT:-2300}
@@ -69,6 +70,17 @@ wait_log() {
     return 1
 }
 
+# require_port_free PORT NAME dies if something already listens there. Without
+# it a leftover process from an earlier run gets adopted silently and the case
+# fails for reasons that have nothing to do with the code under test.
+require_port_free() {
+    local port=$1 name=$2
+    if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+        exec 3>&- 2>/dev/null
+        die "port $port ($name) is already in use; stop the leftover process first"
+    fi
+}
+
 # --- fixtures ---------------------------------------------------------------
 
 build_binary() {
@@ -87,23 +99,33 @@ make_token() {
     chmod 600 "$ART/token"
 }
 
-# start_sshd runs a dedicated sshd with its own config, host key and
-# authorized_keys. The system's sshd configuration is never touched.
+# make_ssh_keys creates the one key pair every sshd in the suite trusts.
+make_ssh_keys() {
+    SSH_KEYS=$ART/sshd
+    mkdir -p "$SSH_KEYS"
+    ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEYS/id_ed25519" -C tingly-e2e || die "client key"
+    cp "$SSH_KEYS/id_ed25519.pub" "$SSH_KEYS/authorized_keys"
+    chmod 600 "$SSH_KEYS/authorized_keys" "$SSH_KEYS/id_ed25519"
+}
+
+# start_sshd NAME PORT runs a dedicated sshd with its own config file and host
+# key. The system's sshd configuration is never touched, which is the whole
+# point: a real jump host cannot be modified either.
 start_sshd() {
-    local dir=$ART/sshd
+    local name=$1 port=$2
+    require_port_free "$port" "sshd $name"
+    local dir=$ART/sshd-$name
     mkdir -p "$dir" /run/sshd
     ssh-keygen -q -t ed25519 -N '' -f "$dir/host_ed25519" || die "host key"
-    ssh-keygen -q -t ed25519 -N '' -f "$dir/id_ed25519" -C tingly-e2e || die "client key"
-    cp "$dir/id_ed25519.pub" "$dir/authorized_keys"
-    chmod 600 "$dir/authorized_keys" "$dir/id_ed25519"
     cat > "$dir/sshd_config" <<EOF
-Port $SSHD_PORT
+Port $port
 ListenAddress 127.0.0.1
 HostKey $dir/host_ed25519
 PidFile $dir/sshd.pid
-AuthorizedKeysFile $dir/authorized_keys
+AuthorizedKeysFile $SSH_KEYS/authorized_keys
 PermitRootLogin yes
 PubkeyAuthentication yes
+AllowTcpForwarding yes
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 UsePAM no
@@ -113,16 +135,17 @@ X11Forwarding no
 Subsystem sftp /usr/lib/openssh/sftp-server
 LogLevel VERBOSE
 EOF
-    /usr/sbin/sshd -f "$dir/sshd_config" -D -e > "$ART/sshd.log" 2>&1 &
+    /usr/sbin/sshd -f "$dir/sshd_config" -D -e > "$ART/sshd-$name.log" 2>&1 &
     SSHD_PID=$!
     track "$SSHD_PID"
-    wait_tcp 127.0.0.1 "$SSHD_PORT" 15 || die "sshd did not listen on $SSHD_PORT (see $ART/sshd.log)"
-    info "sshd listening on 127.0.0.1:$SSHD_PORT (pid $SSHD_PID)"
+    wait_tcp 127.0.0.1 "$port" 15 || die "sshd '$name' did not listen on $port (see $ART/sshd-$name.log)"
+    info "sshd '$name' listening on 127.0.0.1:$port (pid $SSHD_PID)"
 }
 
 # start_echo runs a TCP uppercase-echo service, standing in for any plain TCP
 # service so the tunnel can be verified without SSH in the picture.
 start_echo() {
+    require_port_free "$ECHO_PORT" "echo service"
     python3 - "$ECHO_PORT" > "$ART/echo.log" 2>&1 <<'PY' &
 import socketserver, sys
 class H(socketserver.BaseRequestHandler):
@@ -194,9 +217,17 @@ Host tingly-proxy
 Host tingly-local
     HostName 127.0.0.1
 
+# Two hops: ssh reaches the jump host through the tunnel, then the jump host
+# forwards to the machine behind it with stock direct-tcpip. Nothing on the
+# jump host changes; ProxyJump is plain OpenSSH.
+Host behind-jump
+    HostName 127.0.0.1
+    Port $TARGET_SSHD_PORT
+    ProxyJump tingly-proxy
+
 Host *
     User $(id -un)
-    IdentityFile $ART/sshd/id_ed25519
+    IdentityFile $SSH_KEYS/id_ed25519
     IdentitiesOnly yes
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
@@ -208,7 +239,7 @@ EOF
 
 # tssh wraps the real ssh client. The timeout lives inside the function
 # because `timeout` cannot run a shell function.
-tssh() { timeout "${SSH_TIMEOUT:-60}" ssh -F "$ART/ssh_config" "$@"; }
+tssh() { timeout "${SSH_TIMEOUT:-60}" ssh ${SSH_DEBUG:+-vv} -F "$ART/ssh_config" "$@"; }
 
 # wait_exit PID SECONDS -> sets WAIT_RC to the exit code, or 124 on timeout,
 # and WAIT_ELAPSED to how long it took. Not a subshell: `wait` only works for

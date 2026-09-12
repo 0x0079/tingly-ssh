@@ -259,6 +259,47 @@ case_E11() {
 }
 
 # ---------------------------------------------------------------------------
+# E12 two hops: laptop -> tunnel -> jump host -> target, with ProxyJump.
+#     The jump host is never modified; only the client's ssh config gains a
+#     ProxyCommand for the first hop.
+# ---------------------------------------------------------------------------
+case_E12() {
+    local out
+    out=$(SSH_TIMEOUT=90 tssh behind-jump 'echo E12-OK; ss -ltnp 2>/dev/null | grep -c ":'"$TARGET_SSHD_PORT"'"' 2>"$ART/E12.err")
+    if [[ $out == E12-OK* ]]; then
+        record E12 PASS "ssh -J through an unmodified jump host, over the tunnel"
+    else
+        record E12 FAIL "output '$out' (stderr: $(head -c 300 "$ART/E12.err"))"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# E13 the first hop's link is destroyed during a live two hop session.
+#     Only the laptop side roams; the jump-to-target hop never moves.
+# ---------------------------------------------------------------------------
+case_E13() {
+    start_client e13 "127.0.0.1:$SSHD_PORT"
+    wait_log "$CLIENT_LOG" "link established" 15 || { record E13 FAIL "no link"; return; }
+    # ProxyJump through the client's local listener, so the test owns the
+    # tunnel client's pid and can destroy its link on demand.
+    ( SSH_TIMEOUT=90 tssh -J "$(id -un)@127.0.0.1:$CLIENT_PORT" behind-jump         'for i in $(seq 1 20); do echo line$i; sleep 0.4; done' > "$ART/E13.out" 2>"$ART/E13.err" ) &
+    local sshpid=$!
+    sleep 2; kill -USR1 "$CLIENT_PID"
+    sleep 2; kill -USR1 "$CLIENT_PID"
+    wait $sshpid
+    local rc=$? lines last drops
+    lines=$(wc -l < "$ART/E13.out")
+    last=$(tail -1 "$ART/E13.out")
+    drops=$(grep -c 'dropped link on SIGUSR1' "$CLIENT_LOG")
+    if [ $rc -eq 0 ] && [ "$lines" -eq 20 ] && [ "$last" = "line20" ] && [ "$drops" -eq 2 ]; then
+        record E13 PASS "two hop session survived $drops first-hop link failures"
+    else
+        record E13 FAIL "rc=$rc lines=$lines last=$last drops=$drops"
+    fi
+    kill_quiet "$CLIENT_PID"
+}
+
+# ---------------------------------------------------------------------------
 
 main() {
     mkdir -p "$ART"
@@ -267,12 +308,14 @@ main() {
     command -v /usr/sbin/sshd >/dev/null || die "sshd is not installed"
     build_binary
     make_token
-    start_sshd
+    make_ssh_keys
+    start_sshd jump "$SSHD_PORT"
+    start_sshd target "$TARGET_SSHD_PORT"
     start_echo
     start_tunnel_server
     write_ssh_config
 
-    local all=(E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11) id
+    local all=(E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13) id
     for id in "${all[@]}"; do
         if ! selected "$id"; then continue; fi
         if [ $QUICK -eq 1 ] && { [ "$id" = E8 ] || [ "$id" = E9 ]; }; then
