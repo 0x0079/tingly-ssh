@@ -1,0 +1,10 @@
+# Ctrl-C must reach the remote process group and kill the foreground job only.
+# S6-RAN-42 can only appear if the sleep was allowed to finish.
+expect "[$#] $|[$#]$"
+send "sleep 300; echo S6-RAN-$((20+22))"
+sleep 1
+ctrl C
+send "echo S6-INT-$((20+22))"
+expect "S6-INT-42"
+send "exit"
+expect_exit 0

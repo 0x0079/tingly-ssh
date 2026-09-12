@@ -1,0 +1,12 @@
+# A real interactive login: prompt, a command with a tty, clean exit.
+#
+# Markers are arithmetic on purpose. The terminal echoes what we type, so a
+# literal marker would match its own echo and prove nothing; only the shell's
+# output contains the evaluated form.
+expect "[$#] $|[$#]$"
+send "tty"
+expect "/dev/(pts|tty)"
+send "echo S1-MARK-$((20+22))"
+expect "S1-MARK-42"
+send "exit"
+expect_exit 0

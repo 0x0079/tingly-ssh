@@ -1,0 +1,10 @@
+# A window resize must propagate as SIGWINCH all the way to the remote tty.
+expect "[$#] $|[$#]$"
+send "stty size"
+expect "24 80"
+resize 40 100
+sleep 0.5
+send "stty size"
+expect "40 100"
+send "exit"
+expect_exit 0

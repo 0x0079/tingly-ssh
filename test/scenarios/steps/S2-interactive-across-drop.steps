@@ -1,0 +1,11 @@
+# Type a command, let the harness destroy the link underneath the session,
+# then keep typing in the same shell. This is the product promise in one case.
+expect "[$#] $|[$#]$"
+send "echo S2-BEFORE-$((20+22))"
+expect "S2-BEFORE-42"
+touch @ART@/S2.ready
+waitfile @ART@/S2.proceed 120
+send "echo S2-AFTER-$((20+22))"
+expect "S2-AFTER-42"
+send "exit"
+expect_exit 0

@@ -85,20 +85,33 @@ library; the reasoning is in ADR-0003.
 ## Verification
 
 ```bash
-go test -race ./...     # unit, session-layer fault injection, real QUIC end to end
-./test/e2e/run.sh       # real sshd with real ssh/scp, about 3 minutes
+go test -race ./...              # unit, session-layer fault injection, real QUIC
+./test/e2e/run.sh                # real sshd with real ssh/scp (13 cases)
+./test/scenarios/run.sh          # everyday SSH usage (14 cases)
+./test/roaming/selftest.sh       # the roaming suite against simulated faults (7 cases)
+./test/roaming/run.sh            # the same suite against a real deployment and real radios
 ```
 
-- Session-layer tests use `net.Pipe` as the link, cut it repeatedly mid-transfer, and
-  compare the recovered byte stream byte for byte.
-- `test/e2e/` stands up its own sshd and reaches it through an extra `ssh -F` config, so
-  **neither the system nor the user SSH configuration is touched**. Thirteen cases cover
-  ProxyCommand, local port, scp integrity, concurrent sessions, link destruction, a 30s
-  network black hole, the linger deadline, refused token and pin, and a two hop chain
-  through an unmodified jump host. Logs and results are archived under
-  `test/e2e/artifacts/`.
-- Full acceptance checklist, including the manual roaming cases:
-  [`docs/07-verification-plan.md`](docs/07-verification-plan.md).
+Every suite stands up its own sshd and reaches it through an extra `ssh -F` config, so
+**neither the system nor the user SSH configuration is touched**. Logs, transcripts and a
+results table are archived per run under each suite's `artifacts/`.
+
+- **Session layer**: `net.Pipe` is the link, cut repeatedly mid-transfer, and the
+  recovered byte stream is compared byte for byte.
+- **End to end** (`test/e2e/`): ProxyCommand, local port, stdin EOF, scp integrity,
+  concurrent sessions, link destruction, a 30s network black hole, the linger deadline,
+  refused token and pin, and a two hop chain through an unmodified jump host.
+- **Everyday SSH** (`test/scenarios/`): an interactive shell on a real pty, typing before
+  and after the link is destroyed, 32 MiB of stdout, all 256 byte values, Ctrl-C, window
+  resize, `-L`/`-R`/`-D` forwarding, sftp, rsync, and ControlMaster multiplexing proven to
+  share one tunnel stream.
+- **Roaming** (`test/roaming/`): leaving and rejoining a network, outages either side of
+  the linger deadline, NAT idle, a bulk transfer across a network change, and a server
+  restart. A remote heartbeat makes the result measurable: counter continuity proves the
+  stream was not corrupted, and the largest arrival gap is how long the terminal actually
+  froze. Radios are driven automatically through nmcli or macOS, by prompts otherwise, and
+  by simulated faults in CI.
+- Full acceptance checklist: [`docs/07-verification-plan.md`](docs/07-verification-plan.md).
 
 ## Status
 
