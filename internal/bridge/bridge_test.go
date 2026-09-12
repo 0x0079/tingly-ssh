@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"errors"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0x0079/tingly-shell/internal/proto"
 	"github.com/0x0079/tingly-shell/internal/transport"
 )
 
@@ -44,6 +46,23 @@ type harness struct {
 	server    *Server
 	client    *Client
 	localAddr string
+	cancel    context.CancelFunc
+	runErr    chan error
+	runTaken  bool // a test already consumed runErr, so cleanup must not wait
+}
+
+// waitRun consumes the supervisor's exit status, so a test can assert on it
+// without leaving cleanup waiting for a value that will never come.
+func (h *harness) waitRun(t *testing.T, d time.Duration) error {
+	t.Helper()
+	h.runTaken = true
+	select {
+	case err := <-h.runErr:
+		return err
+	case <-time.After(d):
+		t.Fatal("Run did not return in time")
+		return nil
+	}
 }
 
 func newHarness(t *testing.T, token, clientToken string) *harness {
@@ -101,17 +120,21 @@ func newHarness(t *testing.T, token, clientToken string) *harness {
 	}
 	go cli.ServeListener(ctx, ln)
 
+	h := &harness{server: srv, client: cli, localAddr: ln.Addr().String(), cancel: cancel, runErr: runErr}
 	t.Cleanup(func() {
 		cancel()
 		ln.Close()
 		srv.Close()
+		if h.runTaken {
+			return
+		}
 		select {
 		case <-runErr:
 		case <-time.After(5 * time.Second):
 			t.Error("client supervisor did not stop")
 		}
 	})
-	return &harness{server: srv, client: cli, localAddr: ln.Addr().String()}
+	return h
 }
 
 func TestEndToEndEcho(t *testing.T) {
@@ -246,6 +269,161 @@ func TestPinMismatchIsRejected(t *testing.T) {
 	if errors.Is(err, context.Canceled) {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+// rawSession completes a handshake by hand and returns the HELLO_ACK plus the
+// link, so a test can hold a session open, abandon one without a CLOSE frame
+// (what a killed client looks like to the server), or read a refusal code
+// directly.
+func rawSession(t *testing.T, addr, pin string, token []byte, resume bool) (*proto.HelloAck, *proto.Conn) {
+	t.Helper()
+	tlsConf, err := transport.ClientTLS("127.0.0.1", pin, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	link, err := transport.Dial(ctx, addr, tlsConf, transport.Tuning{})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := proto.NewConn(link)
+	id, err := proto.NewSessionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hello := &proto.Hello{
+		Version:   proto.Version,
+		SessionID: id,
+		Epoch:     1,
+		Window:    proto.DefaultWindow,
+		Token:     token,
+	}
+	if resume {
+		hello.Flags |= proto.FlagResume
+	}
+	if err := pc.WriteAndFlush(hello); err != nil {
+		t.Fatalf("send HELLO: %v", err)
+	}
+	f, err := pc.ReadFrame()
+	if err != nil {
+		t.Fatalf("read HELLO_ACK: %v", err)
+	}
+	ack, ok := f.(*proto.HelloAck)
+	if !ok {
+		t.Fatalf("want HELLO_ACK, got %s", f.Type())
+	}
+	return ack, pc
+}
+
+// TestSessionCapRefusesAndEvicts covers risk R-3: the server bounds how many
+// sessions it holds, and a zombie left behind by a killed client must not keep
+// the next client out.
+func TestSessionCapRefusesAndEvicts(t *testing.T) {
+	dir := t.TempDir()
+	cert, _, err := transport.LoadOrCreateCert(filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem"), []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, err := transport.PinOf(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := echoServer(t)
+	srv, err := NewServer(ServerConfig{
+		Listen:      "127.0.0.1:0",
+		Targets:     []string{target.Addr().String()},
+		Token:       []byte("token"),
+		MaxSessions: 1,
+		Linger:      time.Hour, // never reaped during the test: eviction must do it
+		TLS:         transport.ServerTLS(cert),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go srv.Serve(ctx)
+	addr := srv.Addr().String()
+
+	// One live session fills the server.
+	ack, live := rawSession(t, addr, pin, []byte("token"), false)
+	if ack.Code != proto.CodeOK {
+		t.Fatalf("first session refused: %s", proto.CodeName(ack.Code))
+	}
+
+	// A second is refused, because the first one is still linked.
+	refused, conn2 := rawSession(t, addr, pin, []byte("token"), false)
+	if refused.Code != proto.CodeResourceExhausted {
+		t.Fatalf("want resource_exhausted, got %s", proto.CodeName(refused.Code))
+	}
+	_ = conn2.Close()
+
+	// Killing the link without a CLOSE frame is what a crashed client looks
+	// like: the session lingers with nobody attached.
+	_ = live.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.sessionCount() != 1 || srv.linkedCount() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("zombie session never detached (sessions=%d linked=%d)",
+				srv.sessionCount(), srv.linkedCount())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// The next client evicts the zombie instead of being turned away.
+	third, conn3 := rawSession(t, addr, pin, []byte("token"), false)
+	defer conn3.Close()
+	if third.Code != proto.CodeOK {
+		t.Fatalf("third session refused: %s", proto.CodeName(third.Code))
+	}
+	if n := srv.sessionCount(); n != 1 {
+		t.Fatalf("session count is %d, want 1 after eviction", n)
+	}
+}
+
+func TestCertificateLifetimeIsBounded(t *testing.T) {
+	dir := t.TempDir()
+	cert, created, err := transport.LoadOrCreateCert(filepath.Join(dir, "c.pem"), filepath.Join(dir, "k.pem"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("expected a freshly generated certificate")
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// R-6: long enough not to be a chore, short enough to force renewal.
+	if life := leaf.NotAfter.Sub(leaf.NotBefore); life > 830*24*time.Hour {
+		t.Fatalf("certificate valid for %v, want at most ~825 days", life)
+	}
+}
+
+// TestRunStopsOnContextCancel: cancelling the client must tear down a healthy
+// link, not wait for it to fail on its own.
+func TestRunStopsOnContextCancel(t *testing.T) {
+	h := newHarness(t, "token", "token")
+	waitFor(t, 10*time.Second, h.client.Session().Linked, "the client to attach")
+	h.cancel()
+	if err := h.waitRun(t, 5*time.Second); err == nil {
+		t.Fatal("expected a shutdown error")
+	}
+}
+
+// waitFor polls cond until it holds or the deadline passes.
+func waitFor(t *testing.T, limit time.Duration, cond func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
 }
 
 func TestTokenFilePermissions(t *testing.T) {

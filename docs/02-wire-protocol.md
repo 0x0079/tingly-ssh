@@ -70,6 +70,7 @@ client                                   server
 | 3 | `SESSION_UNKNOWN` | 该 session 已过期；终止当前 Session，上层可开新 Session |
 | 4 | `EPOCH_STALE` | 已有更新的 Link 接管；本 Link 静默退出 |
 | 5 | `INTERNAL` | 可重试 |
+| 9 | `RESOURCE_EXHAUSTED` | 服务端已达 `--max-sessions`，可重试（退避后再来） |
 
 `epoch` 由客户端每次重连时 +1。服务端拒绝 `epoch` 不大于当前已接管 Link 的 HELLO（防止
 旧链路在网络延迟后"复活"抢占新链路）。

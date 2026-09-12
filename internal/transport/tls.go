@@ -25,6 +25,14 @@ import (
 // PinPrefix marks a SPKI pin string.
 const PinPrefix = "sha256:"
 
+// CertLifetime is how long a generated self-signed certificate is valid.
+//
+// 825 days is the longest lifetime the CA/Browser Forum still accepts, and it
+// keeps the habit of renewing rather than minting a certificate that outlives
+// the machine. Renewal is cheap here: clients pin the public key, so reusing
+// the key means the pin does not change and no client configuration moves.
+const CertLifetime = 825 * 24 * time.Hour
+
 // Pin returns the pin for a parsed certificate: base64(SHA-256(SPKI)).
 // Pinning the public key rather than the certificate means the server can
 // renew its certificate without invalidating client configuration.
@@ -130,7 +138,7 @@ func generateSelfSigned(certPath, keyPath string, hosts []string) (tls.Certifica
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: "tingly-shell"},
 		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
+		NotAfter:              time.Now().Add(CertLifetime),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
