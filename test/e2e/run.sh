@@ -294,6 +294,52 @@ case_E13() {
 }
 
 # ---------------------------------------------------------------------------
+# E14 per-device credentials: each device has its own token, the server stores
+#     only hashes, and revoking one device is deleting its line plus SIGHUP.
+# ---------------------------------------------------------------------------
+case_E14() {
+    local creds=$ART/credentials laptop phone
+    laptop=$(mint_credential laptop)
+    phone=$(mint_credential phone)
+    printf '# label  sha256(token)  not-after\n%s\n%s\n' "$laptop" "$phone" > "$creds"
+    start_tunnel_server_with_credentials e14 7451 "$creds"
+
+    # Both devices work, and the server log attributes the link to a device.
+    local out_a out_b
+    CLIENT_TOKEN_FILE=$ART/laptop.token CLIENT_PIN=$CRED_SERVER_PIN \
+        TUNNEL_PORT=7451 start_client e14-laptop "127.0.0.1:$SSHD_PORT"
+    out_a=$(SSH_TIMEOUT=60 tssh -p "$CLIENT_PORT" tingly-local 'echo E14-LAPTOP-OK' 2>"$ART/E14.err")
+    local laptop_pid=$CLIENT_PID
+    CLIENT_TOKEN_FILE=$ART/phone.token CLIENT_PIN=$CRED_SERVER_PIN \
+        TUNNEL_PORT=7451 start_client e14-phone "127.0.0.1:$SSHD_PORT"
+    out_b=$(SSH_TIMEOUT=60 tssh -p "$CLIENT_PORT" tingly-local 'echo E14-PHONE-OK' 2>>"$ART/E14.err")
+    local phone_pid=$CLIENT_PID phone_log=$CLIENT_LOG
+    kill_quiet "$laptop_pid"; kill_quiet "$phone_pid"
+
+    local attributed
+    attributed=$(grep -c 'credential=laptop' "$CRED_SERVER_LOG")
+
+    # Revoke the phone: delete its line, then SIGHUP.
+    printf '%s\n' "$laptop" > "$creds"
+    kill -HUP "$CRED_SERVER_PID"
+    wait_log "$CRED_SERVER_LOG" "credentials reloaded" 15 || { record E14 FAIL "no reload"; return; }
+
+    CLIENT_TOKEN_FILE=$ART/phone.token CLIENT_PIN=$CRED_SERVER_PIN TUNNEL_PORT=7451 \
+        CLIENT_NO_WAIT=1 start_client e14-revoked "127.0.0.1:$SSHD_PORT" --session-linger 5s
+    wait_exit "$CLIENT_PID" 25
+    local refused=0
+    grep -q 'unauthorized' "$CLIENT_LOG" && refused=1
+
+    if [ "$out_a" = "E14-LAPTOP-OK" ] && [ "$out_b" = "E14-PHONE-OK" ] && \
+       [ "$attributed" -ge 1 ] && [ "$WAIT_RC" != "0" ] && [ "$WAIT_RC" != "124" ] && [ $refused -eq 1 ]; then
+        record E14 PASS "two devices admitted and attributed, revoked one refused in ${WAIT_ELAPSED}s"
+    else
+        record E14 FAIL "laptop='$out_a' phone='$out_b' attributed=$attributed revoked_rc=$WAIT_RC refused=$refused"
+    fi
+    kill_quiet "$CRED_SERVER_PID"
+}
+
+# ---------------------------------------------------------------------------
 
 main() {
     mkdir -p "$ART"
@@ -309,7 +355,7 @@ main() {
     start_tunnel_server
     write_ssh_config
 
-    local all=(E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13) id
+    local all=(E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13 E14) id
     for id in "${all[@]}"; do
         if ! selected "$id"; then continue; fi
         if [ $QUICK -eq 1 ] && { [ "$id" = E8 ] || [ "$id" = E9 ]; }; then

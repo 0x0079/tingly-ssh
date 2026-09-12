@@ -53,8 +53,12 @@ func (e *ProtocolError) Unwrap() error { return e.err }
 
 // Config parameterises a Session.
 type Config struct {
-	Role       Role
-	SessionID  proto.SessionID
+	Role      Role
+	SessionID proto.SessionID
+	// Identity names the credential this session belongs to. The server binds
+	// sessions to it so one credential cannot take over another's session
+	// (risk R-2 in docs/04-security-model.md §8).
+	Identity   string
 	Window     uint64 // our per-stream receive window
 	MaxStreams int
 	KeepAlive  time.Duration
@@ -79,11 +83,12 @@ func (c *Config) withDefaults() {
 // Session is a resumable multiplexed session. It outlives the links that
 // carry it: a link failure never fails a Session or its Streams.
 type Session struct {
-	id     proto.SessionID
-	role   Role
-	window uint64
-	cfg    Config
-	log    *slog.Logger
+	id       proto.SessionID
+	identity string
+	role     Role
+	window   uint64
+	cfg      Config
+	log      *slog.Logger
 
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -112,6 +117,7 @@ func New(cfg Config) *Session {
 	cfg.withDefaults()
 	s := &Session{
 		id:         cfg.SessionID,
+		identity:   cfg.Identity,
 		role:       cfg.Role,
 		window:     cfg.Window,
 		cfg:        cfg,
@@ -130,6 +136,10 @@ func New(cfg Config) *Session {
 
 // ID returns the session identifier.
 func (s *Session) ID() proto.SessionID { return s.id }
+
+// Identity returns the credential label this session belongs to, or "" when
+// the session was created without one.
+func (s *Session) Identity() string { return s.identity }
 
 // Window is our advertised per-stream receive window.
 func (s *Session) Window() uint64 { return s.window }

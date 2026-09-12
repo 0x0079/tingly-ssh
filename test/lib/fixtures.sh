@@ -106,6 +106,36 @@ start_tunnel_server() {
     info "tunnel server on udp/$TUNNEL_PORT (pid $SERVER_PID) pin=$PIN"
 }
 
+# start_tunnel_server_with_credentials NAME PORT CREDFILE starts a second
+# server that authenticates per-device credentials instead of a shared token.
+# Sets CRED_SERVER_PID, CRED_SERVER_LOG and CRED_SERVER_PIN.
+start_tunnel_server_with_credentials() {
+    local name=$1 port=$2 credfile=$3
+    require_port_free "$port" "credential server $name"
+    CRED_SERVER_LOG=$ART/tunnel-server-$name.log
+    "$BIN" server \
+        --listen "127.0.0.1:$port" \
+        --target "127.0.0.1:$SSHD_PORT" \
+        --credentials "$credfile" \
+        --state-dir "$ART/server-state-$name" \
+        --log-level "${TUNNEL_LOG_LEVEL:-info}" \
+        > "$CRED_SERVER_LOG" 2>&1 &
+    CRED_SERVER_PID=$!
+    track "$CRED_SERVER_PID"
+    wait_log "$CRED_SERVER_LOG" "server listening" 15 || die "credential server did not start"
+    CRED_SERVER_PIN=$(grep -o 'sha256:[A-Za-z0-9+/=]*' "$CRED_SERVER_LOG" | head -1)
+    info "credential server '$name' on udp/$port (pid $CRED_SERVER_PID)"
+}
+
+# mint_credential LABEL -> writes $ART/<label>.token (0600) and echoes the
+# server record line, exactly the way an operator would run keygen.
+mint_credential() {
+    local label=$1
+    "$BIN" keygen --label "$label" > "$ART/$label.token" 2> "$ART/$label.keygen"
+    chmod 600 "$ART/$label.token"
+    grep -E "^$label[[:space:]]+sha256:" "$ART/$label.keygen"
+}
+
 # start_client NAME TARGET [extra flags...] -> CLIENT_PORT, CLIENT_PID, CLIENT_LOG
 start_client() {
     local name=$1 target=$2; shift 2

@@ -26,11 +26,12 @@ OpenSSH client ─TCP/stdio─▶ tingly-shell client ─QUIC─▶ tingly-shell
 ```bash
 go build ./cmd/tingly-shell
 
-# 生成预共享 token（两端同一份，权限必须 0600）
-./tingly-shell keygen > token && chmod 600 token
+# 每台设备一份凭据：token 给设备，stderr 上打印的记录行加进服务端的凭据文件
+# （服务端只存哈希，不存 token 本身）
+./tingly-shell keygen --label laptop-mbp14 > token && chmod 600 token
 
 # 服务端：和 sshd 同机。启动日志会打印 pin=sha256:...
-./tingly-shell server --listen :7443 --target 127.0.0.1:22 --token-file token
+./tingly-shell server --listen :7443 --target 127.0.0.1:22 --credentials credentials
 
 # 客户端 A：本地端口转发
 ./tingly-shell client --server SERVER:7443 --listen 127.0.0.1:2222 \
@@ -47,6 +48,8 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 
 `--pin` 和 `--token-file` 回答的是两个不同的问题，两个都要配。pin 是服务端公钥的指纹，
 公开信息，证明"连对了机器"；token 才是真正的密码，证明"你有资格接入"。
+每台设备一份 token，所以撤销一台只需删掉一行再 `SIGHUP`；会话绑定到创建它的凭据，
+日志里也能看出是哪台设备。
 区别与常见误区见 [`docs/04-security-model.md`](docs/04-security-model.md) §2.1。
 同一份文档还有威胁模型（§6）、各类凭据的生命周期与有效期（§7）、
 已知风险清单与处置状态（§8）、部署加固清单（§9）。
