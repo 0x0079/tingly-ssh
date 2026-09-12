@@ -22,12 +22,6 @@ for arg in "$@"; do
     esac
 done
 
-selected() {
-    [ ${#SELECT[@]} -eq 0 ] && return 0
-    local id
-    for id in "${SELECT[@]}"; do [ "$id" = "$1" ] && return 0; done
-    return 1
-}
 
 # ---------------------------------------------------------------------------
 # E1  the tunnel carries a plain TCP service, including half close
@@ -325,6 +319,7 @@ main() {
         log "--- $id"
         "case_$id"
     done
+    set_summary_meta
     summary
 }
 

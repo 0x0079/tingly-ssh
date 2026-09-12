@@ -1,0 +1,9 @@
+# An interactive session that sits idle must still be usable afterwards.
+expect "[$#] $|[$#]$"
+send "echo S13-BEFORE-$((20+22))"
+expect "S13-BEFORE-42"
+sleep @IDLE@
+send "echo S13-AFTER-$((20+22))"
+expect "S13-AFTER-42"
+send "exit"
+expect_exit 0

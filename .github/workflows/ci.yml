@@ -33,3 +33,38 @@ jobs:
         with:
           name: e2e-artifacts
           path: test/e2e/artifacts/
+
+  scenarios:
+    # Everyday SSH usage from docs/07-verification-plan.md §3.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: install openssh and rsync
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openssh-server openssh-client rsync
+      - run: ./test/scenarios/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scenario-artifacts
+          path: test/scenarios/artifacts/
+
+  roaming-harness:
+    # The roaming suite from §4, with the simulated network controller: no
+    # radios in CI, but the measurements and verdicts are the same code.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: install openssh
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openssh-server openssh-client
+      - run: ./test/roaming/selftest.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: roaming-artifacts
+          path: test/roaming/artifacts/

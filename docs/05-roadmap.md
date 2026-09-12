@@ -25,13 +25,21 @@
 - [x] 真实 SSH 端到端验证套件 `test/e2e/`（E1–E13，见 `07-verification-plan.md`）
 - [x] 跳板机多跳场景：与 `ProxyJump` 组合，跳板机零改动（`08-jump-host-topologies.md`，E12/E13）
 
+## M2.5 · 验收体系（已完成）
+- [x] 共享 harness 层 `test/lib/`（进程管理、等待、心跳测量、结果归档）
+- [x] 日常 SSH 场景套件 `test/scenarios/`（S1–S14：交互式 pty、大输出、8-bit 透明、
+      Ctrl-C、窗口尺寸、`-L`/`-R`/`-D`、sftp、rsync、ControlMaster 复用、空闲）
+- [x] 漫游套件 `test/roaming/`（R1–R7）+ 可插拔网络控制器（nmcli/macos/manual/sim）
+- [x] 漫游 harness 自测 `selftest.sh`：无无线电环境下用 sim 控制器跑完整 R 用例
+- [x] 心跳测量把"看起来还活着"变成可判定数字：计数器连续性 + 最大卡顿时长
+
 ## M3 · 生产加固（未开始）
 - [ ] token 改为 HMAC 挑战-响应（`04-security-model.md` §3）
 - [ ] 按客户端身份路由多个 target（白名单 → 策略）
 - [ ] 结构化指标（Prometheus：重连次数、重放字节、RTT、窗口阻塞时长）
 - [ ] systemd unit / launchd plist / Windows 服务封装
 - [ ] 接入 quic-go Path API（`AddPath`/`Probe`/`Switch`）做主动路径迁移，换网时免去一次握手
-- [ ] 真机验收 M1–M7：Wi-Fi↔蜂窝、飞行模式、NAT 超时（`07-verification-plan.md` §4，结论回填该表）
+- [ ] 真机执行 `test/roaming/run.sh`（R1–R7）：Wi-Fi↔蜂窝、飞行模式、NAT 超时，结论归档
 
 ## M4 · 跨进程持久化（未开始）
 - [ ] 会话状态快照（偏移量 + 未 ACK 缓冲）落盘

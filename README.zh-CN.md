@@ -79,15 +79,27 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 ## 验证
 
 ```bash
-go test -race ./...     # 单元 + 会话层故障注入 + 真 QUIC 端到端
-./test/e2e/run.sh       # 真 sshd + 真 ssh/scp 的端到端验收（约 3 分钟）
+go test -race ./...              # 单元 + 会话层故障注入 + 真 QUIC
+./test/e2e/run.sh                # 真 sshd + 真 ssh/scp 端到端（13 个用例）
+./test/scenarios/run.sh          # 日常 SSH 使用场景（14 个用例）
+./test/roaming/selftest.sh       # 漫游套件 + 模拟故障，自证 harness（7 个用例）
+./test/roaming/run.sh            # 同一套件跑真实部署与真实无线电
 ```
 
-- 会话层测试用 `net.Pipe` 做链路，在传输途中反复切断，逐字节比对恢复后的数据流。
-- `test/e2e/` 自建一个独立 sshd 并用 `-F` 配置接入 ssh，**不改动系统和用户的 SSH 配置**，
-  覆盖 ProxyCommand、本地端口、scp 完整性、并发会话、链路销毁、30 秒网络黑洞、
-  linger 超时、token 与 pin 拒绝、跳板机两跳共 13 个用例，日志与结果归档到 `test/e2e/artifacts/`。
-- 完整验收清单（含真机漫游手工用例）：[`docs/07-verification-plan.md`](docs/07-verification-plan.md)。
+每个套件都自建独立 sshd 并用 `-F` 配置接入 ssh，**不改动系统和用户的 SSH 配置**。
+日志、transcript 与结果表按次归档到各套件的 `artifacts/`。
+
+- **会话层**：用 `net.Pipe` 做链路，在传输途中反复切断，逐字节比对恢复后的数据流。
+- **端到端**（`test/e2e/`）：ProxyCommand、本地端口、stdin EOF、scp 完整性、并发会话、
+  链路销毁、30 秒网络黑洞、linger 超时、token 与 pin 拒绝、跳板机两跳。
+- **日常 SSH**（`test/scenarios/`）：真 pty 上的交互式 shell、断链前后在同一个 shell 里
+  继续敲命令、32 MiB 标准输出、全部 256 种字节值、Ctrl-C、窗口尺寸变化、
+  `-L`/`-R`/`-D` 转发、sftp、rsync、以及 ControlMaster 复用只占一条隧道流。
+- **漫游**（`test/roaming/`）：离开与回到网络、linger 两侧的断网、NAT 空闲、
+  传输中途换网、服务端重启。远端心跳让结果可判定：计数器连续性证明字节流没被破坏，
+  最大到达间隔就是终端实际卡顿的时长。无线电通过 nmcli 或 macOS 自动控制，
+  没有这些则提示操作者，CI 里用模拟故障。
+- 完整验收清单：[`docs/07-verification-plan.md`](docs/07-verification-plan.md)。
 
 ## 当前状态
 

@@ -3,3 +3,8 @@
 
 /test/e2e/.bin/
 /test/e2e/artifacts/
+
+/test/scenarios/.bin/
+/test/scenarios/artifacts/
+/test/roaming/.bin/
+/test/roaming/artifacts/
