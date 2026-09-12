@@ -43,10 +43,22 @@ done
 # tunnel client. Placeholders in the steps file are filled in first.
 pty_run() {
     local id=$1 steps=$2; shift 2
-    sed -e "s|@ART@|$ART|g" -e "s|@IDLE@|$IDLE_SECONDS|g" "$steps" > "$ART/$id.steps"
+    sed -e "s|@ART@|$ART|g" -e "s|@IDLE@|$IDLE_SECONDS|g" -e "s|@LOG@|${S17_LOG:-}|g" \
+        "$steps" > "$ART/$id.steps"
+    TERM=${TERM:-xterm-256color} \
     "$HERE/ptydrive.py" --script "$ART/$id.steps" --transcript "$ART/$id.transcript" \
         --timeout "${PTY_TIMEOUT:-60}" -- \
         ssh -F "$ART/ssh_config" -tt -p "$MAIN_PORT" tingly-local "$@" 2>"$ART/$id.err"
+}
+
+# rcmd runs one command on the far side over a fresh, non-interactive session.
+rcmd() { SSH_TIMEOUT=${SSH_TIMEOUT:-60} tssh -p "$MAIN_PORT" tingly-local "$@"; }
+
+# tmux_missing records a SKIP when the far side has no tmux.
+tmux_missing() {
+    if rcmd 'command -v tmux >/dev/null'; then return 1; fi
+    record "$1" SKIP "tmux is not installed on the far side"
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -287,6 +299,96 @@ case_S13() {
 }
 
 # ---------------------------------------------------------------------------
+# S15 tmux: detach and leave the session alive on the far side
+# ---------------------------------------------------------------------------
+case_S15() {
+    tmux_missing S15 && return
+    local ses=tingly-$RUN_ID-S15 found
+    pty_run S15 "$HERE/steps/S15-tmux-detach-reattach.steps" \
+        "TERM=xterm-256color tmux new-session -A -s $ses"
+    local rc=$?
+    # The pane still holds the output, which is what a reattach would show.
+    # Only the evaluated marker can match: the echoed command line carries the
+    # expression instead.
+    found=$(rcmd "tmux capture-pane -p -t $ses 2>/dev/null | grep -c S15-IN-42" 2>>"$ART/S15.err")
+    rcmd "tmux kill-session -t $ses" >/dev/null 2>&1
+    if [ $rc -eq 0 ] && [ "${found:-0}" -ge 1 ]; then
+        record S15 PASS "detached with Ctrl-B d, session and pane content survived"
+    else
+        record S15 FAIL "rc=$rc marker in pane: ${found:-0} ($(head -c 200 "$ART/S15.err"))"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# S16 tmux: output keeps scrolling while the link is destroyed underneath
+# ---------------------------------------------------------------------------
+case_S16() {
+    tmux_missing S16 && return
+    local ses=tingly-$RUN_ID-S16
+    rm -f "$ART/S16.ready" "$ART/S16.proceed"
+    ( PTY_TIMEOUT=120 pty_run S16 "$HERE/steps/S16-tmux-across-drop.steps" \
+        "TERM=xterm-256color tmux new-session -A -s $ses" ) &
+    local drv=$!
+    if ! wait_file "$ART/S16.ready" 90; then
+        kill_quiet "$drv"; rcmd "tmux kill-session -t $ses" >/dev/null 2>&1
+        record S16 FAIL "tmux session never started producing output"; return
+    fi
+    local before after
+    before=$(grep -c 'link established' "$MAIN_LOG")
+    kill -USR1 "$MAIN_PID"; sleep 2
+    kill -USR1 "$MAIN_PID"; sleep 3
+    after=$(grep -c 'link established' "$MAIN_LOG")
+    touch "$ART/S16.proceed"
+    wait "$drv"
+    local rc=$? alive=no
+    rcmd "tmux has-session -t $ses" >/dev/null 2>&1 && alive=yes
+    rcmd "tmux kill-session -t $ses" >/dev/null 2>&1
+    if [ $rc -eq 0 ] && [ "$after" -ge $((before+2)) ] && [ "$alive" = yes ]; then
+        record S16 PASS "tmux output continued across $((after-before)) link failures"
+    else
+        record S16 FAIL "rc=$rc links $before -> $after alive=$alive ($(head -c 200 "$ART/S16.err"))"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# S17 tmux: the ssh client is killed outright; the work keeps running and the
+#     session is reattachable, which is why people run tmux in the first place
+# ---------------------------------------------------------------------------
+case_S17() {
+    tmux_missing S17 && return
+    local ses=tingly-$RUN_ID-S17
+    S17_LOG=/tmp/tingly-$RUN_ID-S17.log
+    rcmd "rm -f $S17_LOG" >/dev/null 2>&1
+    rm -f "$ART/S17.ready"
+    ( PTY_TIMEOUT=120 pty_run S17 "$HERE/steps/S17-tmux-hard-kill.steps" \
+        "TERM=xterm-256color tmux new-session -A -s $ses" ) &
+    local drv=$!
+    if ! wait_file "$ART/S17.ready" 90; then
+        kill_quiet "$drv"; rcmd "tmux kill-session -t $ses" >/dev/null 2>&1
+        record S17 FAIL "tmux session never came up"; return
+    fi
+    # SIGKILL the driver and the ssh under it: no orderly shutdown at all, the
+    # way a laptop lid closing or a process crash looks from the far side.
+    # Match on the driver and on this suite's ssh invocation only: a pattern
+    # containing the session name would also hit tmux itself, which is exactly
+    # the process that has to survive.
+    pkill -9 -f "ptydrive.py --script $ART/S17.steps" 2>/dev/null
+    pkill -9 -f "ssh -F $ART/ssh_config -tt -p $MAIN_PORT" 2>/dev/null
+    kill_quiet "$drv"
+    local n1 n2 found
+    sleep 2; n1=$(rcmd "wc -l < $S17_LOG" 2>>"$ART/S17.err")
+    sleep 3; n2=$(rcmd "wc -l < $S17_LOG" 2>>"$ART/S17.err")
+    found=$(rcmd "tmux capture-pane -p -t $ses 2>/dev/null | grep -c S17-STARTED-42" 2>>"$ART/S17.err")
+    rcmd "tmux kill-session -t $ses; rm -f $S17_LOG" >/dev/null 2>&1
+    unset S17_LOG
+    if [ "${n2:-0}" -gt "${n1:-0}" ] && [ "${found:-0}" -ge 1 ]; then
+        record S17 PASS "work kept running after a hard kill ($n1 -> $n2 lines), pane reattachable"
+    else
+        record S17 FAIL "lines $n1 -> $n2, marker in pane ${found:-0}"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # S14 rsync over ssh, when rsync is available
 # ---------------------------------------------------------------------------
 case_S14() {
@@ -354,7 +456,7 @@ main() {
     MAIN_PORT=$CLIENT_PORT MAIN_PID=$CLIENT_PID MAIN_LOG=$CLIENT_LOG
     wait_log "$MAIN_LOG" "link established" 20 || die "tunnel client never linked"
 
-    local all=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 S11 S12 S13 S14) id
+    local all=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 S11 S12 S13 S14 S15 S16 S17) id
     for id in "${all[@]}"; do
         selected "$id" || continue
         if [ $QUICK -eq 1 ] && { [ "$id" = S3 ] || [ "$id" = S13 ]; }; then

@@ -1,0 +1,10 @@
+# Start work that must outlive the connection, then let the harness kill the
+# ssh client outright. tmux keeps the work running; the reattach is checked
+# from outside this script.
+expect "[$#] $|[$#]$"
+send "(for i in $(seq 1 400); do echo $i >> @LOG@; sleep 0.1; done) &"
+expect "[$#] $|[$#]$"
+send "echo S17-STARTED-$((20+22))"
+expect "S17-STARTED-42"
+touch @ART@/S17.ready
+waitfile @ART@/S17.never 300

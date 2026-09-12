@@ -91,7 +91,24 @@ SSH 最常用的就是"开一个终端敲命令"和"把数据倒过去"，这些
 | S13 | 空闲后仍可用 | 空闲后交互式 shell 继续响应 |
 | S14 | rsync over ssh | 8 MiB sha256 一致（未装 rsync 则 SKIP） |
 
-### 3.1 交互式断言的一个陷阱（踩过）
+### 3.1 tmux 三个用例分别证明什么
+
+tmux 是最常用的用法，它和本项目的职责必须分清楚，否则容易互相冒功：
+
+| 用例 | 谁在起作用 |
+| --- | --- |
+| S15 | 纯 tmux：分离与重连，隧道只是通路 |
+| S16 | **隧道**：链路被销毁期间会话不断，用户只看到短暂停顿，tmux 无需重连 |
+| S17 | **tmux**：连接彻底死透（ssh 被 SIGKILL），远端工作照常推进，人回来后重连 |
+
+S16 是隧道的价值：不用重连、不用重新 attach。S17 是 tmux 的价值：即使隧道也救不回来
+（超过 linger、换了设备），工作不丢。两者叠加才是完整的日常工作流。
+
+S17 踩过一个坑：最初用 `pkill -f "<会话名>"` 杀客户端，结果把 tmux 自己也杀了
+（同机测试时会话名出现在多个进程的命令行里），于是"工作继续"变成了假失败。
+现在只按驱动进程和本套件的 ssh 命令行精确匹配。
+
+### 3.2 交互式断言的一个陷阱（踩过）
 
 终端会回显输入的命令，所以 `expect "MARK"` 会匹配到**自己的回显**，什么都没验证。
 步骤脚本因此统一用算术标记：输入 `echo MARK-$((20+22))`，回显里是表达式、
@@ -191,16 +208,16 @@ test/e2e/artifacts/<时间戳>/
 
 ### 5.2 最近一次归档结果（L5 场景套件）
 
-- run: 20260912-084104
+- run: 20260912-085128
 - host: Linux 6.18.44-fc-v24 x86_64
-- commit: 6af2b9c
+- commit: 3022ed5
 - ssh: OpenSSH_9.6p1 Ubuntu-3ubuntu13.19
 
-| case | result | note |
+| case |result | note |
 | --- | --- | --- |
 | S1 | PASS | interactive shell with a real tty, clean exit |
 | S2 | PASS | typed before and after 2 link failures in one shell |
-| S3 | PASS | 32 MiB of stdout, sha256 c9dd1045a7ea |
+| S3 | PASS | 32 MiB of stdout, sha256 c53888da4952 |
 | S4 | PASS | all 256 byte values round tripped unchanged |
 | S5 | PASS | streams separate, exit status 42 propagated |
 | S6 | PASS | Ctrl-C killed the remote sleep, shell survived |
@@ -208,10 +225,13 @@ test/e2e/artifacts/<时间戳>/
 | S8 | PASS | ssh -L carried a TCP service over the tunnel |
 | S9 | PASS | ssh -R reached back through the tunnel |
 | S10 | PASS | ssh -D SOCKS5 proxied through the tunnel |
-| S11 | PASS | sftp put and get, 4 MiB, sha256 93361797019f |
+| S11 | PASS | sftp put and get, 4 MiB, sha256 b873a4db40fd |
 | S12 | PASS | 3 multiplexed sessions over 1 tunnel stream |
 | S13 | PASS | shell still responsive after 30s idle |
-| S14 | PASS | rsync over ssh, 8 MiB, sha256 8e532e9802c2 |
+| S14 | PASS | rsync over ssh, 8 MiB, sha256 b6bd90ebb84e |
+| S15 | PASS | detached with Ctrl-B d, session and pane content survived |
+| S16 | PASS | tmux output continued across 2 link failures |
+| S17 | PASS | work kept running after a hard kill (24 -> 56 lines), pane reattachable |
 
 ### 5.3 最近一次归档结果（L6 漫游套件，`selftest.sh` / NET_CTL=sim）
 

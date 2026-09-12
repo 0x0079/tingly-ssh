@@ -27,8 +27,9 @@
 
 ## M2.5 · 验收体系（已完成）
 - [x] 共享 harness 层 `test/lib/`（进程管理、等待、心跳测量、结果归档）
-- [x] 日常 SSH 场景套件 `test/scenarios/`（S1–S14：交互式 pty、大输出、8-bit 透明、
-      Ctrl-C、窗口尺寸、`-L`/`-R`/`-D`、sftp、rsync、ControlMaster 复用、空闲）
+- [x] 日常 SSH 场景套件 `test/scenarios/`（S1–S17：交互式 pty、大输出、8-bit 透明、
+      Ctrl-C、窗口尺寸、`-L`/`-R`/`-D`、sftp、rsync、ControlMaster 复用、空闲、
+      tmux 分离重连 / 断链续跑 / 硬杀后重连）
 - [x] 漫游套件 `test/roaming/`（R1–R7）+ 可插拔网络控制器（nmcli/macos/manual/sim）
 - [x] 漫游 harness 自测 `selftest.sh`：无无线电环境下用 sim 控制器跑完整 R 用例
 - [x] 心跳测量把"看起来还活着"变成可判定数字：计数器连续性 + 最大卡顿时长

@@ -87,7 +87,7 @@ library; the reasoning is in ADR-0003.
 ```bash
 go test -race ./...              # unit, session-layer fault injection, real QUIC
 ./test/e2e/run.sh                # real sshd with real ssh/scp (13 cases)
-./test/scenarios/run.sh          # everyday SSH usage (14 cases)
+./test/scenarios/run.sh          # everyday SSH usage (17 cases)
 ./test/roaming/selftest.sh       # the roaming suite against simulated faults (7 cases)
 ./test/roaming/run.sh            # the same suite against a real deployment and real radios
 ```
@@ -103,8 +103,10 @@ results table are archived per run under each suite's `artifacts/`.
   refused token and pin, and a two hop chain through an unmodified jump host.
 - **Everyday SSH** (`test/scenarios/`): an interactive shell on a real pty, typing before
   and after the link is destroyed, 32 MiB of stdout, all 256 byte values, Ctrl-C, window
-  resize, `-L`/`-R`/`-D` forwarding, sftp, rsync, and ControlMaster multiplexing proven to
-  share one tunnel stream.
+  resize, `-L`/`-R`/`-D` forwarding, sftp, rsync, ControlMaster multiplexing proven to
+  share one tunnel stream, and three tmux cases that separate the two jobs: the tunnel
+  keeps a tmux session running through a destroyed link with no reattach, and tmux keeps
+  the work alive when the connection dies outright.
 - **Roaming** (`test/roaming/`): leaving and rejoining a network, outages either side of
   the linger deadline, NAT idle, a bulk transfer across a network change, and a server
   restart. A remote heartbeat makes the result measurable: counter continuity proves the
