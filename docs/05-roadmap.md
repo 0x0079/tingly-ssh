@@ -20,7 +20,9 @@
 - [x] 客户端 Supervisor：指数退避 + jitter + linger 终止
 - [x] 服务端 Session registry + reaper + token 认证
 - [x] 端到端测试：QUIC 上跑真实 TCP 回环，含强制断链后恢复
-- [x] CLI：`server` / `client` / `proxy` / `keygen`
+- [x] CLI：`server` / `client` / `proxy` / `keygen`，客户端 `SIGUSR1` 主动换链路
+- [x] 握手拒绝原因可达：refusal 帧先落地再关连接，客户端不再把"token 错"当成"网络断"
+- [x] 真实 SSH 端到端验证套件 `test/e2e/`（E1–E11，见 `07-verification-plan.md`）
 
 ## M3 · 生产加固（未开始）
 - [ ] token 改为 HMAC 挑战-响应（`04-security-model.md` §3）
@@ -28,7 +30,7 @@
 - [ ] 结构化指标（Prometheus：重连次数、重放字节、RTT、窗口阻塞时长）
 - [ ] systemd unit / launchd plist / Windows 服务封装
 - [ ] 接入 quic-go Path API（`AddPath`/`Probe`/`Switch`）做主动路径迁移，换网时免去一次握手
-- [ ] 真机验收：Wi-Fi↔5G 切换、地铁断网、NAT 超时（`06-testing.md` §4）
+- [ ] 真机验收 M1–M7：Wi-Fi↔蜂窝、飞行模式、NAT 超时（`07-verification-plan.md` §4，结论回填该表）
 
 ## M4 · 跨进程持久化（未开始）
 - [ ] 会话状态快照（偏移量 + 未 ACK 缓冲）落盘

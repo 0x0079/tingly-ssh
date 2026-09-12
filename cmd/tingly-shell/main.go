@@ -36,6 +36,9 @@ Modes:
   proxy    bridge stdin/stdout, for ssh -o ProxyCommand='tingly-shell proxy ...'
   keygen   print a fresh pre-shared token
 
+Signals (client and proxy):
+  SIGUSR1  drop the current link and reconnect, e.g. after a network change
+
 Run "tingly-shell <mode> -h" for the flags of a mode.
 `
 
@@ -228,6 +231,7 @@ func runClient(ctx context.Context, args []string, stdioMode bool) error {
 	defer cancel()
 	runErr := make(chan error, 1)
 	go func() { runErr <- cli.Run(ctx) }()
+	go dropLinkOnSignal(ctx, cli, log)
 
 	serveErr := make(chan error, 1)
 	if stdioMode {
@@ -251,6 +255,28 @@ func runClient(ctx context.Context, args []string, stdioMode bool) error {
 		return err
 	case err := <-runErr:
 		return err
+	}
+}
+
+// dropLinkOnSignal re-homes the session when SIGUSR1 arrives. A supervisor
+// script can send it after the OS reports a network change, instead of waiting
+// for the old path to time out; the verification suite uses it to inject link
+// failures into a live ssh session.
+func dropLinkOnSignal(ctx context.Context, cli *bridge.Client, log *slog.Logger) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGUSR1)
+	defer signal.Stop(ch)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ch:
+			if cli.Session().DropLink() {
+				log.Warn("dropped link on SIGUSR1, reconnecting")
+			} else {
+				log.Warn("SIGUSR1 received but no link is attached")
+			}
+		}
 	}
 }
 

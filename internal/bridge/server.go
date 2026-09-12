@@ -150,8 +150,7 @@ func (s *Server) handleConn(ctx context.Context, conn *quic.Conn) error {
 	}
 	hello, ok := f.(*proto.Hello)
 	if !ok {
-		_ = pc.WriteAndFlush(&proto.HelloAck{Code: proto.CodeProtocol, Reason: "expected HELLO"})
-		_ = pc.Close()
+		refuse(pc, &proto.HelloAck{Code: proto.CodeProtocol, Reason: "expected HELLO"})
 		return errors.New("bridge: first frame was not HELLO")
 	}
 	if err := link.SetReadDeadline(time.Time{}); err != nil {
@@ -162,9 +161,10 @@ func (s *Server) handleConn(ctx context.Context, conn *quic.Conn) error {
 	if err != nil {
 		var he *HandshakeError
 		if errors.As(err, &he) {
-			_ = pc.WriteAndFlush(&proto.HelloAck{Code: he.Code, Reason: he.Reason})
+			refuse(pc, &proto.HelloAck{Code: he.Code, Reason: he.Reason})
+		} else {
+			_ = pc.Close()
 		}
-		_ = pc.Close()
 		return err
 	}
 
@@ -178,6 +178,18 @@ func (s *Server) handleConn(ctx context.Context, conn *quic.Conn) error {
 		"remote", conn.RemoteAddr().String(), "streams", len(hello.States))
 	return sess.Attach(pc, hello.Window, hello.States)
 }
+
+// refuse answers a handshake with a reason and closes the link gracefully, so
+// the client can tell "your token is wrong" from "the network broke" and stop
+// retrying.
+func refuse(pc *proto.Conn, ack *proto.HelloAck) {
+	_ = pc.WriteAndFlush(ack)
+	_ = pc.CloseGracefully(refusalFlushTimeout)
+}
+
+// refusalFlushTimeout bounds how long a refused link waits for the client to
+// read the reason before the connection is torn down.
+const refusalFlushTimeout = 2 * time.Second
 
 // resolveSession authenticates the HELLO and returns the session it belongs
 // to, creating one if this is a fresh session.

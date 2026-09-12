@@ -84,6 +84,24 @@ func (l *Link) Close() error {
 	return l.conn.CloseWithError(0, "link closed")
 }
 
+// CloseGracefully lets already written frames reach the peer before the
+// connection goes away.
+//
+// Closing a QUIC connection sends CONNECTION_CLOSE immediately and discards
+// whatever is still queued on its streams, so a plain Close would swallow the
+// last frame: a refusing HELLO_ACK, or a CLOSE telling the peer not to try to
+// resume. Finishing the stream first and waiting briefly for the peer to hang
+// up keeps those frames meaningful.
+func (l *Link) CloseGracefully(wait time.Duration) error {
+	_ = l.stream.Close() // FIN: everything written so far is delivered
+	select {
+	case <-l.conn.Context().Done():
+	case <-time.After(wait):
+	}
+	l.stream.CancelRead(0)
+	return l.conn.CloseWithError(0, "link closed")
+}
+
 // Dial opens a QUIC connection and its single bidirectional tunnel stream.
 func Dial(ctx context.Context, addr string, tlsConf *tls.Config, t Tuning) (*Link, error) {
 	conn, err := quic.DialAddr(ctx, addr, tlsConf, QUICConfig(t))
