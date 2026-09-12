@@ -114,6 +114,7 @@ func runServer(ctx context.Context, args []string) error {
 		certFile  = fs.String("cert", "", "TLS certificate (default: <state-dir>/cert.pem, generated if absent)")
 		keyFile   = fs.String("key", "", "TLS private key (default: <state-dir>/key.pem)")
 		hosts     = fs.String("cert-hosts", "", "comma separated DNS names or IPs for the generated certificate")
+		maxSess   = fs.Int("max-sessions", bridge.DefaultMaxSessions, "concurrent sessions to hold; bounds server memory")
 	)
 	var common commonFlags
 	common.bind(fs)
@@ -143,17 +144,19 @@ func runServer(ctx context.Context, args []string) error {
 	}
 	log := common.logger()
 
-	srv, err := bridge.NewServer(bridge.ServerConfig{
-		Listen:     *listen,
-		Targets:    splitList(*targets),
-		Token:      token,
-		Window:     common.window,
-		MaxStreams: common.maxStreams,
-		Linger:     common.linger,
-		Tuning:     common.tuning(),
-		TLS:        transport.ServerTLS(cert),
-		Logger:     log,
-	})
+	cfg := bridge.ServerConfig{
+		Listen:      *listen,
+		Targets:     splitList(*targets),
+		Token:       token,
+		Window:      common.window,
+		MaxStreams:  common.maxStreams,
+		MaxSessions: *maxSess,
+		Linger:      common.linger,
+		Tuning:      common.tuning(),
+		TLS:         transport.ServerTLS(cert),
+		Logger:      log,
+	}
+	srv, err := bridge.NewServer(cfg)
 	if err != nil {
 		return err
 	}
@@ -162,6 +165,13 @@ func runServer(ctx context.Context, args []string) error {
 		log.Info("generated self-signed certificate", "cert", *certFile, "key", *keyFile)
 	}
 	log.Info("server listening", "addr", srv.Addr().String(), "targets", *targets, "pin", pin)
+	// Worst case memory is a function of the three limits; print it so the
+	// host can be sized instead of guessed (docs/04-security-model.md §8, R-3).
+	log.Info("session limits",
+		"max_sessions", cfg.MaxSessions,
+		"max_streams_per_session", common.maxStreams,
+		"window_bytes", common.window,
+		"worst_case_memory_mib", cfg.WorstCaseMemory()/(1<<20))
 	log.Info("clients must pass this pin", "flag", "--pin "+pin)
 	return srv.Serve(ctx)
 }

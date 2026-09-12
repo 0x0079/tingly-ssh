@@ -81,6 +81,9 @@ const (
 	CodeProtocol           uint64 = 6
 	CodeShutdown           uint64 = 7
 	CodeTimeout            uint64 = 8
+	// CodeResourceExhausted refuses a new session because the server is at its
+	// configured limit. It is retryable: the client backs off and tries again.
+	CodeResourceExhausted uint64 = 9
 )
 
 // CodeName renders a result code for logs and errors.
@@ -104,6 +107,8 @@ func CodeName(code uint64) string {
 		return "shutdown"
 	case CodeTimeout:
 		return "timeout"
+	case CodeResourceExhausted:
+		return "resource_exhausted"
 	default:
 		return fmt.Sprintf("code(%d)", code)
 	}

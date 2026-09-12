@@ -52,7 +52,9 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 已知风险清单与处置状态（§8）、部署加固清单（§9）。
 
 关键参数：`--session-linger`（断网可恢复时长，默认 60s）、`--window`（每流窗口，
-同时决定重放内存上界）、`--idle-timeout` / `--keepalive`（多快判定链路已死）。
+同时决定重放内存上界）、`--idle-timeout` / `--keepalive`（多快判定链路已死），
+服务端还有 `--max-sessions`，它决定内存上界。启动日志会打印最坏内存，请按实际并发调整，
+不要直接用默认值。
 
 ## 文档
 

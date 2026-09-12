@@ -21,17 +21,46 @@ import (
 // handshakeTimeout bounds how long a new connection may take to send HELLO.
 const handshakeTimeout = 10 * time.Second
 
+// DefaultMaxSessions bounds how many sessions one server holds at once.
+//
+// Memory is the reason the bound exists: a session retains up to
+// MaxStreams * (send window + receive window) bytes, and it keeps holding them
+// for the whole linger window after its link dies. Without a cap, anyone with
+// a valid token can grow the server's footprint at will (risk R-3 in
+// docs/04-security-model.md §8).
+const DefaultMaxSessions = 128
+
+// WorstCaseMemory reports the upper bound on session memory for a config, so
+// the operator can size the host instead of guessing.
+func (c ServerConfig) WorstCaseMemory() uint64 {
+	window := c.Window
+	if window == 0 {
+		window = proto.DefaultWindow
+	}
+	streams := c.MaxStreams
+	if streams == 0 {
+		streams = 64
+	}
+	sessions := c.MaxSessions
+	if sessions == 0 {
+		sessions = DefaultMaxSessions
+	}
+	// Each stream holds a replay buffer and a receive buffer.
+	return uint64(sessions) * uint64(streams) * window * 2
+}
+
 // ServerConfig configures the sshd-side bridge.
 type ServerConfig struct {
-	Listen     string   // UDP address to listen on
-	Targets    []string // allowed TCP targets; the first one is the default
-	Token      []byte   // pre-shared token
-	Window     uint64
-	MaxStreams int
-	Linger     time.Duration // how long a session survives without a link
-	Tuning     transport.Tuning
-	TLS        *tls.Config
-	Logger     *slog.Logger
+	Listen      string   // UDP address to listen on
+	Targets     []string // allowed TCP targets; the first one is the default
+	Token       []byte   // pre-shared token
+	Window      uint64
+	MaxStreams  int
+	MaxSessions int           // concurrent sessions this server will hold
+	Linger      time.Duration // how long a session survives without a link
+	Tuning      transport.Tuning
+	TLS         *tls.Config
+	Logger      *slog.Logger
 }
 
 // Server accepts QUIC links, resumes or creates sessions, and bridges each
@@ -53,6 +82,9 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.Linger == 0 {
 		cfg.Linger = 60 * time.Second
 	}
+	if cfg.MaxSessions == 0 {
+		cfg.MaxSessions = DefaultMaxSessions
+	}
 	if len(cfg.Targets) == 0 {
 		return nil, errors.New("bridge: server needs at least one target")
 	}
@@ -61,6 +93,25 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return nil, err
 	}
 	return &Server{cfg: cfg, log: cfg.Logger, ln: ln, sessions: make(map[proto.SessionID]*mux.Session)}, nil
+}
+
+// sessionCount and linkedCount expose registry state for tests.
+func (s *Server) sessionCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sessions)
+}
+
+func (s *Server) linkedCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, sess := range s.sessions {
+		if sess.Linked() {
+			n++
+		}
+	}
+	return n
 }
 
 // Addr reports the bound UDP address.
@@ -204,6 +255,12 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 	s.mu.Lock()
 	sess, known := s.sessions[hello.SessionID]
 	if !known {
+		if len(s.sessions) >= s.cfg.MaxSessions && !s.evictOneDetachedLocked() {
+			s.mu.Unlock()
+			s.log.Warn("refused a new session at the limit",
+				"sessions", s.cfg.MaxSessions, "remote_session", hello.SessionID.Short())
+			return nil, &HandshakeError{Code: proto.CodeResourceExhausted, Reason: "session limit reached"}
+		}
 		if hello.Flags&proto.FlagResume != 0 {
 			s.mu.Unlock()
 			// The client wants to resume a session we no longer hold (most
@@ -238,6 +295,33 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 		return nil, &HandshakeError{Code: proto.CodeEpochStale, Reason: "a newer link already owns this session"}
 	}
 	return sess, nil
+}
+
+// evictOneDetachedLocked frees a slot by closing the session that has been
+// without a link the longest, and reports whether it found one. A client whose
+// process died leaves a session lingering; that zombie should not keep the
+// same client from reconnecting. Sessions with a live link are never evicted.
+func (s *Server) evictOneDetachedLocked() bool {
+	var victim *mux.Session
+	var oldest time.Time
+	for _, sess := range s.sessions {
+		if sess.Linked() {
+			continue
+		}
+		if at := sess.DetachedSince(); victim == nil || at.Before(oldest) {
+			victim, oldest = sess, at
+		}
+	}
+	if victim == nil {
+		return false
+	}
+	s.log.Info("evicting an idle session to make room",
+		"session", victim.ID().Short(), "detached_for", time.Since(oldest).Round(time.Second))
+	// Close outside the lock would be cleaner, but terminate only takes the
+	// session's own lock, never the server's.
+	go victim.Close(proto.CodeTimeout, "evicted to make room for a new session")
+	delete(s.sessions, victim.ID())
+	return true
 }
 
 // serveStreams dials the target for every logical stream the client opens.

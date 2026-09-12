@@ -56,7 +56,9 @@ the cases where this cannot work: [`docs/08-jump-host-topologies.md`](docs/08-ju
 
 Key flags: `--session-linger` (how long an outage stays recoverable, default 60s),
 `--window` (per-stream window, which also bounds replay memory), `--idle-timeout` and
-`--keepalive` (how fast a dead link is detected).
+`--keepalive` (how fast a dead link is detected), and on the server `--max-sessions`,
+which is what bounds its memory. The server prints the worst case at startup; size it
+for your actual concurrency rather than leaving the default.
 
 ## Documentation
 

@@ -77,6 +77,17 @@ func (c *Client) Run(ctx context.Context) error {
 	attempt := 0
 	downSince := time.Now()
 
+	// Attach blocks until its link dies, so cancellation has to reach the
+	// session rather than waiting for the loop to come back around. Without
+	// this, Ctrl-C on a healthy connection would hang until the link failed.
+	go func() {
+		select {
+		case <-ctx.Done():
+			c.sess.Close(proto.CodeShutdown, "client shutting down")
+		case <-c.sess.Done():
+		}
+	}()
+
 	for {
 		if err := ctx.Err(); err != nil {
 			c.sess.Close(proto.CodeShutdown, "client shutting down")
