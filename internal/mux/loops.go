@@ -200,6 +200,7 @@ func (s *Session) collect(gen uint64) (frames []proto.Frame, more, closing bool,
 	}
 
 	budget := maxBatchBytes
+	var retired []uint64
 	n := len(s.order)
 	for i := 0; i < n; i++ {
 		idx := (s.rr + i) % n
@@ -228,14 +229,23 @@ func (s *Session) collect(gen uint64) (frames []proto.Frame, more, closing bool,
 		}
 		if st.send.cursor < st.send.end() {
 			more = true
-		} else if st.finQueued {
-			frames = append(frames, &proto.Fin{StreamID: st.id, FinalOffset: st.send.end()})
-			st.finQueued = false
-			st.finSent = true
+		} else {
+			if st.finQueued {
+				frames = append(frames, &proto.Fin{StreamID: st.id, FinalOffset: st.send.end()})
+				st.finQueued = false
+				st.finSent = true
+			}
+			if st.retire {
+				retired = append(retired, st.id)
+			}
 		}
 	}
 	if n > 0 {
 		s.rr = (s.rr + 1) % n
+	}
+	// Removal is deferred to here so s.order stays stable during the pass.
+	for _, id := range retired {
+		s.removeStreamLocked(id)
 	}
 	return frames, more, closing, nil
 }

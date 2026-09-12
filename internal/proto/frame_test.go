@@ -14,7 +14,7 @@ func TestFrameRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	frames := []Frame{
-		&Hello{Version: Version, SessionID: id, Epoch: 7, Window: DefaultWindow, Token: []byte("s3cret"), States: []StreamState{
+		&Hello{Version: Version, SessionID: id, Epoch: 7, Flags: FlagResume, Window: DefaultWindow, Token: []byte("s3cret"), States: []StreamState{
 			{StreamID: 1, RecvOffset: 1 << 20, ReadOffset: 1 << 19, Flags: FlagFinSent | FlagFinReceived, Target: "127.0.0.1:22"},
 			{StreamID: 3},
 		}},

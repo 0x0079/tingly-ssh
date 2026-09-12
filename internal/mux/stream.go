@@ -47,6 +47,7 @@ type Stream struct {
 	finalOff   uint64
 	ackedRecv  uint64
 	ackedRead  uint64
+	retire     bool  // closed locally; retire once the queued FIN is flushed
 	err        error // terminal stream error (reset, session death)
 }
 
@@ -134,17 +135,29 @@ func (s *Stream) CloseWrite() error {
 	return nil
 }
 
-// Close tears the stream down. A stream that was closed gracefully in both
-// directions is simply retired; anything else is reset so the peer does not
-// wait forever.
+// Close tears the stream down. A stream that finished gracefully in both
+// directions is retired once its FIN is on the wire; anything else is reset so
+// the peer does not wait forever.
 func (s *Stream) Close() error {
 	s.sess.mu.Lock()
-	graceful := s.finSent && s.finRecv
-	if !graceful && s.err == nil {
+	switch {
+	case s.err != nil:
+		// Already broken: the peer knows, nothing left to send.
+		s.sess.removeStreamLocked(s.id)
+	case s.writeEOF && s.finRecv:
+		if s.finQueued || s.send.cursor < s.send.end() {
+			// Let the writer drain the remaining data and the FIN first;
+			// sending RESET here would truncate a clean close.
+			s.retire = true
+			s.sess.notifyLocked()
+		} else {
+			s.sess.removeStreamLocked(s.id)
+		}
+	default:
 		s.sess.enqueueLocked(&proto.Reset{StreamID: s.id, Code: proto.CodeOK})
+		s.sess.removeStreamLocked(s.id)
 	}
 	s.failLocked(errLocalClose)
-	s.sess.removeStreamLocked(s.id)
 	s.sess.mu.Unlock()
 	return nil
 }

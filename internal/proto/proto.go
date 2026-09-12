@@ -139,6 +139,15 @@ func (id SessionID) String() string { return hex.EncodeToString(id[:]) }
 // (docs/04-security-model.md §5).
 func (id SessionID) Short() string { return hex.EncodeToString(id[:4]) }
 
+// HELLO flags.
+const (
+	// FlagResume says the client has already been attached on this session, so
+	// the server is expected to know it. Without the flag an unknown session
+	// id is simply a new session, even when the HELLO already carries streams
+	// the application opened before the first link existed.
+	FlagResume uint64 = 1 << 0
+)
+
 // Stream state flags exchanged during resumption.
 const (
 	FlagFinReceived uint64 = 1 << 0
