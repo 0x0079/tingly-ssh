@@ -1,89 +1,108 @@
 # tingly-shell
 
-**SSH over QUIC with session resumption.** 不改 OpenSSH、不改 sshd，在两端各放一个用户态
-bridge，中间跑 QUIC + 可恢复会话层，让 SSH 连接在 Wi-Fi ↔ 蜂窝切换、NAT rebinding、
-甚至短时断网之后继续存活。
+English | [简体中文](README.zh-CN.md)
+
+**SSH over QUIC with session resumption.** No changes to OpenSSH or sshd: a user-space
+bridge sits at each end with QUIC and a resumable session layer in between, so an SSH
+connection survives a Wi-Fi to cellular switch, NAT rebinding, or a brief outage.
 
 ```
 OpenSSH client ─TCP/stdio─▶ tingly-shell client ─QUIC─▶ tingly-shell server ─TCP─▶ sshd
                                     └── Resumable Session Layer ──┘
 ```
 
-职责分层（架构的核心约束）：
+Layering is the central design constraint:
 
-| 层 | 负责 |
+| Layer | Owns |
 | --- | --- |
-| SSH | 认证、端到端加密、channel 语义 |
-| Session 层（本项目） | `session_id`、绝对字节偏移量、重放、去重、跨连接重连、逻辑流多路复用 |
-| QUIC（quic-go） | 握手加密、拥塞控制、丢包恢复、连接迁移、NAT rebinding |
+| SSH | Authentication, end-to-end encryption, channel semantics |
+| Session layer (this project) | `session_id`, absolute byte offsets, replay, dedup, reconnection across links, logical stream multiplexing |
+| QUIC (quic-go) | Handshake encryption, congestion control, loss recovery, connection migration, NAT rebinding |
 
-一句话：**QUIC 解决"活着的连接换了地址"，Session 层解决"连接死了又活过来"。**
+In one line: **QUIC handles a live connection changing address; the session layer handles
+a connection that died and came back.**
 
-## 快速开始
+## Quick start
 
 ```bash
 go build ./cmd/tingly-shell
 
-# 生成预共享 token（两端同一份，权限必须 0600）
+# Pre-shared token, identical on both ends, mode 0600
 ./tingly-shell keygen > token && chmod 600 token
 
-# 服务端：和 sshd 同机。启动日志会打印 pin=sha256:...
+# Server, next to sshd. Its startup log prints pin=sha256:...
 ./tingly-shell server --listen :7443 --target 127.0.0.1:22 --token-file token
 
-# 客户端 A：本地端口转发
+# Client A: local port forward
 ./tingly-shell client --server SERVER:7443 --listen 127.0.0.1:2222 \
     --token-file token --pin sha256:...
 ssh -p 2222 user@127.0.0.1
 
-# 客户端 B：ProxyCommand（推荐，无本地监听端口）
+# Client B: ProxyCommand, recommended, no local listening port
 ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
 ```
 
-跳板机场景（`笔记本 → 跳板机 → 目标机`，**跳板机零改动**）：把第一跳套进隧道，
-其余照常用 OpenSSH 的 `ProxyJump`。只有第一跳会因为换网而断，保护它就够了。
-配置片段与边界条件见 [`docs/08-jump-host-topologies.md`](docs/08-jump-host-topologies.md)。
+`--pin` and `--token-file` answer different questions and you need both. The pin is the
+fingerprint of the server's public key, it is public and proves you reached the right
+server. The token is the actual secret and proves you are allowed in. Details and common
+misconceptions: [`docs/04-security-model.md`](docs/04-security-model.md) §2.1.
 
-关键参数：`--session-linger`（断网可恢复时长，默认 60s）、`--window`（每流窗口，
-同时决定重放内存上界）、`--idle-timeout` / `--keepalive`（多快判定链路已死）。
+**Jump hosts** (`laptop → jump host → target`, with **no changes on the jump host**):
+tunnel the first hop and use stock OpenSSH `ProxyJump` for the rest. Only the first hop
+breaks when the laptop changes network, so protecting it is enough. Config snippets and
+the cases where this cannot work: [`docs/08-jump-host-topologies.md`](docs/08-jump-host-topologies.md).
 
-## 文档
+Key flags: `--session-linger` (how long an outage stays recoverable, default 60s),
+`--window` (per-stream window, which also bounds replay memory), `--idle-timeout` and
+`--keepalive` (how fast a dead link is detected).
 
-设计先行，代码跟随。全部设计文档在 [`docs/`](docs/README.md)：
+## Documentation
 
-- [目标与范围](docs/00-vision-and-scope.md) · [架构](docs/01-architecture.md) · [线格式规范](docs/02-wire-protocol.md)
-- [会话恢复语义](docs/03-session-resumption.md) · [安全模型](docs/04-security-model.md)
-- [里程碑与进度](docs/05-roadmap.md) · [测试策略](docs/06-testing.md)
-- ADR：[传输层选型（QUIC vs MPTCP vs RFC 8803）](docs/adr/0001-transport-choice.md) ·
-  [为什么还要会话层](docs/adr/0002-resumable-session-layer.md) ·
-  [依赖选型调研](docs/adr/0003-library-choices.md)
+Design first, code second. Everything lives in [`docs/`](docs/README.md) (written in
+Chinese; this README is the English entry point):
 
-## 代码结构
+- [Scope](docs/00-vision-and-scope.md) · [Architecture](docs/01-architecture.md) · [Wire protocol](docs/02-wire-protocol.md)
+- [Resumption semantics](docs/03-session-resumption.md) · [Security model](docs/04-security-model.md)
+- [Roadmap](docs/05-roadmap.md) · [Test strategy](docs/06-testing.md) · [Verification plan](docs/07-verification-plan.md)
+- [Jump host topologies](docs/08-jump-host-topologies.md)
+- ADRs: [transport choice, QUIC vs MPTCP vs RFC 8803](docs/adr/0001-transport-choice.md) ·
+  [why a session layer above QUIC](docs/adr/0002-resumable-session-layer.md) ·
+  [library survey](docs/adr/0003-library-choices.md)
 
-| 目录 | 内容 |
+## Layout
+
+| Directory | Contents |
 | --- | --- |
-| `internal/proto` | `tingly/0` 帧编解码（基于 quic-go 的 `quicvarint`） |
-| `internal/mux` | 可恢复会话层：Session / Stream / 重放缓冲 / 偏移量流控 |
-| `internal/transport` | QUIC dial/listen、TLS、自签证书、SPKI pin、token 加载 |
-| `internal/bridge` | client（TCP/stdio 接入 + 重连 supervisor）、server（会话注册表 + 目标白名单） |
-| `cmd/tingly-shell` | `server` / `client` / `proxy` / `keygen` 四个子命令 |
+| `internal/proto` | `tingly/0` frame codec, built on quic-go's `quicvarint` |
+| `internal/mux` | Resumable session layer: Session, Stream, replay buffer, offset-based flow control |
+| `internal/transport` | QUIC dial/listen, TLS, self-signed certificates, SPKI pinning, token loading |
+| `internal/bridge` | Client (TCP/stdio entry plus reconnect supervisor), server (session registry plus target allowlist) |
+| `cmd/tingly-shell` | Subcommands `server`, `client`, `proxy`, `keygen` |
 
-直接依赖只有一个：`github.com/quic-go/quic-go`。其余全部用标准库，理由见 ADR-0003。
+One direct dependency: `github.com/quic-go/quic-go`. Everything else is the standard
+library; the reasoning is in ADR-0003.
 
-## 验证
+## Verification
 
 ```bash
-go test -race ./...     # 单元 + 会话层故障注入 + 真 QUIC 端到端
-./test/e2e/run.sh       # 真 sshd + 真 ssh/scp 的端到端验收（约 3 分钟）
+go test -race ./...     # unit, session-layer fault injection, real QUIC end to end
+./test/e2e/run.sh       # real sshd with real ssh/scp, about 3 minutes
 ```
 
-- 会话层测试用 `net.Pipe` 做链路，在传输途中反复切断，逐字节比对恢复后的数据流。
-- `test/e2e/` 自建一个独立 sshd 并用 `-F` 配置接入 ssh，**不改动系统和用户的 SSH 配置**，
-  覆盖 ProxyCommand、本地端口、scp 完整性、并发会话、链路销毁、30 秒网络黑洞、
-  linger 超时、token 与 pin 拒绝共 11 个用例，日志与结果归档到 `test/e2e/artifacts/`。
-- 完整验收清单（含真机漫游手工用例）：[`docs/07-verification-plan.md`](docs/07-verification-plan.md)。
+- Session-layer tests use `net.Pipe` as the link, cut it repeatedly mid-transfer, and
+  compare the recovered byte stream byte for byte.
+- `test/e2e/` stands up its own sshd and reaches it through an extra `ssh -F` config, so
+  **neither the system nor the user SSH configuration is touched**. Thirteen cases cover
+  ProxyCommand, local port, scp integrity, concurrent sessions, link destruction, a 30s
+  network black hole, the linger deadline, refused token and pin, and a two hop chain
+  through an unmodified jump host. Logs and results are archived under
+  `test/e2e/artifacts/`.
+- Full acceptance checklist, including the manual roaming cases:
+  [`docs/07-verification-plan.md`](docs/07-verification-plan.md).
 
-## 当前状态
+## Status
 
-M0–M2 完成（设计文档、会话层、QUIC 承载、bridge、CLI、测试）。
-**v0 已知限制**：进程重启后会话不恢复；客户端主动换网尚未接入 quic-go 的 Path API；
-token 是 TLS 内的 bearer token。逐条跟踪在 [roadmap](docs/05-roadmap.md)。
+M0 to M2 are done: design docs, session layer, QUIC carriage, bridges, CLI, tests.
+**Known v0 limits**: a session does not survive a process restart; client-initiated
+path migration does not yet use quic-go's Path API; the token is a bearer token inside
+TLS. Each one is tracked in the [roadmap](docs/05-roadmap.md).
