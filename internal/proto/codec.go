@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/quic-go/quic-go/quicvarint"
 )
@@ -77,3 +78,18 @@ func (c *Conn) ReadFrame() (Frame, error) {
 
 // Close closes the underlying stream.
 func (c *Conn) Close() error { return c.rwc.Close() }
+
+// gracefulCloser is implemented by transports that can flush what is already
+// written before tearing the connection down.
+type gracefulCloser interface {
+	CloseGracefully(time.Duration) error
+}
+
+// CloseGracefully gives frames already written a chance to arrive. Transports
+// that cannot do better fall back to Close.
+func (c *Conn) CloseGracefully(wait time.Duration) error {
+	if g, ok := c.rwc.(gracefulCloser); ok {
+		return g.CloseGracefully(wait)
+	}
+	return c.rwc.Close()
+}

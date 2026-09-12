@@ -1,5 +1,8 @@
 # 06 · 测试策略
 
+> 用例清单、判定标准与归档方式在 [`07-verification-plan.md`](07-verification-plan.md)。
+> 本文只讲**怎么测**（分层与故障注入手法），不重复列用例。
+
 ## 1. 分层
 
 | 层 | 位置 | 覆盖 |
@@ -8,6 +11,7 @@
 | 单元：会话层 | `internal/mux/session_test.go` | 不变量 I1–I5、FIN/RESET、窗口阻塞、epoch 抢占 |
 | 集成：故障注入 | `internal/mux/session_test.go` | 用内存管道模拟 Link，在任意字节位置切断并重连 |
 | 端到端：真 QUIC | `internal/bridge/bridge_test.go` | TCP→QUIC→TCP 回环；用 `Session.DropLink()` 强制销毁链路后恢复；token 错误、pin 不匹配、token 文件权限 |
+| 端到端：真 SSH | `test/e2e/run.sh` | 真 sshd + 真 ssh/scp，链路销毁、30s 黑洞、linger 超时、认证拒绝（用例 E1–E11） |
 
 ## 2. 故障注入手法
 
@@ -48,6 +52,15 @@ printf 'hello\n' | nc 127.0.0.1 2222     # 期望 HELLO
 
 本地验证结论（2026-09-12）：连通、双向半关闭（`shutdown(SHUT_WR)` 正确传播为 EOF）、
 干净关闭不产生 RESET。真实 `ssh`/`sshd` 的验收列在 §4（当前开发容器没有 sshd）。
+
+## 3.1 真实 SSH 端到端
+
+```bash
+./test/e2e/run.sh          # 自建 sshd + ssh，不改系统与用户的 SSH 配置
+```
+
+故障注入手法：`kill -USR1 <client>` 销毁当前链路（等价于换网后旧路径立刻失效），
+`kill -STOP <server>` 冻结服务端（等价于网络黑洞：包发得出去但没有回应）。
 
 ## 4. 真机漫游验收（M3 清单）
 

@@ -1,2 +1,5 @@
 /tingly-shell
 *.test
+
+/test/e2e/.bin/
+/test/e2e/artifacts/

@@ -28,7 +28,8 @@ sshd
 | [03-session-resumption.md](03-session-resumption.md) | 断链重连、replay、流控、去重的精确语义 | 已定稿 (v0) |
 | [04-security-model.md](04-security-model.md) | 信任边界、TLS pin、token、威胁模型 | 已定稿 (v0) |
 | [05-roadmap.md](05-roadmap.md) | 里程碑 M0..M5 与当前进度 | 持续更新 |
-| [06-testing.md](06-testing.md) | 测试分层、故障注入、手工验收脚本 | 持续更新 |
+| [06-testing.md](06-testing.md) | 测试分层、故障注入手法 | 持续更新 |
+| [07-verification-plan.md](07-verification-plan.md) | **验收清单**：L0–L5 用例表、判定标准、归档方式 | 持续更新 |
 | [adr/0001-transport-choice.md](adr/0001-transport-choice.md) | 为什么选 QUIC bridge 而不是 MPTCP / 改 SSH | 已接受 |
 | [adr/0002-resumable-session-layer.md](adr/0002-resumable-session-layer.md) | 为什么在 QUIC 之上再加一层会话层 | 已接受 |
 | [adr/0003-library-choices.md](adr/0003-library-choices.md) | 依赖选型：quic-go / quicvarint / 标准库 | 已接受 |
@@ -39,3 +40,4 @@ sshd
 2. 线格式的任何不兼容修改必须 bump `docs/02-wire-protocol.md` 里的 `PROTOCOL_VERSION`，
    并在 ADR 中记录迁移策略。
 3. `05-roadmap.md` 是唯一的进度真相来源；代码里不写"TODO 以后做"，而是写进 roadmap。
+4. 合并前必须通过 `go test -race ./...` 与 `./test/e2e/run.sh`（见 `07-verification-plan.md` §5）。

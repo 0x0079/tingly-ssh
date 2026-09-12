@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,13 +170,23 @@ func TestEndToEndSurvivesLinkDrop(t *testing.T) {
 
 func TestBadTokenIsRejected(t *testing.T) {
 	h := newHarness(t, "right", "wrong")
+	start := time.Now()
 	select {
 	case <-h.client.Session().Done():
-		if err := h.client.Session().Err(); err == nil {
-			t.Fatal("expected an authentication failure")
-		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("client did not give up on an invalid token")
+	}
+	err := h.client.Session().Err()
+	if err == nil {
+		t.Fatal("expected an authentication failure")
+	}
+	// The refusal must survive the connection teardown, otherwise the client
+	// cannot tell a rejected token from a broken network and keeps retrying.
+	if !strings.Contains(err.Error(), "unauthorized") {
+		t.Fatalf("want an unauthorized reason, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("gave up after %s; a refused token must fail on the first attempt", elapsed)
 	}
 }
 

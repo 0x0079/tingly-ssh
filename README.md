@@ -65,14 +65,18 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 
 直接依赖只有一个：`github.com/quic-go/quic-go`。其余全部用标准库，理由见 ADR-0003。
 
-## 测试
+## 验证
 
 ```bash
-go test -race ./...
+go test -race ./...     # 单元 + 会话层故障注入 + 真 QUIC 端到端
+./test/e2e/run.sh       # 真 sshd + 真 ssh/scp 的端到端验收（约 3 分钟）
 ```
 
 - 会话层测试用 `net.Pipe` 做链路，在传输途中反复切断，逐字节比对恢复后的数据流。
-- 端到端测试跑真实 QUIC，中途强制销毁链路，验证被桥接的 TCP 连接不受影响。
+- `test/e2e/` 自建一个独立 sshd 并用 `-F` 配置接入 ssh，**不改动系统和用户的 SSH 配置**，
+  覆盖 ProxyCommand、本地端口、scp 完整性、并发会话、链路销毁、30 秒网络黑洞、
+  linger 超时、token 与 pin 拒绝共 11 个用例，日志与结果归档到 `test/e2e/artifacts/`。
+- 完整验收清单（含真机漫游手工用例）：[`docs/07-verification-plan.md`](docs/07-verification-plan.md)。
 
 ## 当前状态
 

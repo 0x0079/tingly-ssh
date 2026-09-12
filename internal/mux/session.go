@@ -304,7 +304,9 @@ func (s *Session) terminate(err error) {
 	close(s.done)
 	s.mu.Unlock()
 	if link != nil {
-		_ = link.Close()
+		// A CLOSE frame may still be queued; let it land so the peer learns
+		// the session is gone instead of trying to resume it.
+		_ = link.CloseGracefully(closeFlushTimeout)
 	}
 	s.log.Debug("session terminated", "err", err)
 }
