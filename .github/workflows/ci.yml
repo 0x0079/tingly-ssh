@@ -17,6 +17,21 @@ jobs:
       - run: go vet ./...
       - run: go test -race -count=1 ./...
 
+  package:
+    # Cross-compiles every release target with the .goreleaser.yaml config,
+    # without publishing, so a packaging break surfaces before a tag is cut.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --snapshot --clean
+
   e2e:
     # The real-ssh suite from docs/07-verification-plan.md §2.
     runs-on: ubuntu-latest

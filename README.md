@@ -2,6 +2,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
+[![CI](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
+
 **SSH over QUIC with session resumption.** No changes to OpenSSH or sshd: a user-space
 bridge sits at each end with QUIC and a resumable session layer in between, so an SSH
 connection survives a Wi-Fi to cellular switch, NAT rebinding, or a brief outage.
@@ -21,6 +24,39 @@ Layering is the central design constraint:
 
 In one line: **QUIC handles a live connection changing address; the session layer handles
 a connection that died and came back.**
+
+## Install
+
+Linux and macOS only (amd64/arm64): reconnect and credential reload are driven by Unix
+signals (`SIGUSR1`, `SIGHUP`), so there is no Windows build.
+
+**Prebuilt binaries** are attached to every
+[release](https://github.com/0x0079/tingly-shell/releases) — built and checksummed by CI,
+see [`.goreleaser.yaml`](.goreleaser.yaml):
+
+```bash
+# Pick the archive for your OS/ARCH from the releases page, then e.g. on linux/amd64:
+curl -LO https://github.com/0x0079/tingly-shell/releases/latest/download/tingly-shell_<version>_linux_amd64.tar.gz
+tar xzf tingly-shell_<version>_linux_amd64.tar.gz
+sudo install -m 755 tingly-shell /usr/local/bin/tingly-shell
+```
+
+**With Go** (module path is public once this repo is; requires Go 1.26+):
+
+```bash
+go install github.com/0x0079/tingly-shell/cmd/tingly-shell@latest
+```
+
+**From source**:
+
+```bash
+git clone https://github.com/0x0079/tingly-shell.git
+cd tingly-shell
+go build ./cmd/tingly-shell
+```
+
+Any of the three put a `tingly-shell` binary in your `$PATH` (or `./tingly-shell` for the
+from-source build). Check what you got: `tingly-shell version`.
 
 ## Quick start
 
