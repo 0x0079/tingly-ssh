@@ -2,6 +2,9 @@
 
 [English](README.md) | 简体中文
 
+[![CI](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
+
 **SSH over QUIC with session resumption.** 不改 OpenSSH、不改 sshd，在两端各放一个用户态
 bridge，中间跑 QUIC + 可恢复会话层，让 SSH 连接在 Wi-Fi ↔ 蜂窝切换、NAT rebinding、
 甚至短时断网之后继续存活。
@@ -20,6 +23,39 @@ OpenSSH client ─TCP/stdio─▶ tingly-shell client ─QUIC─▶ tingly-shell
 | QUIC（quic-go） | 握手加密、拥塞控制、丢包恢复、连接迁移、NAT rebinding |
 
 一句话：**QUIC 解决"活着的连接换了地址"，Session 层解决"连接死了又活过来"。**
+
+## 安装
+
+仅支持 Linux / macOS（amd64 / arm64）：换链路、热加载凭据都是靠 Unix 信号
+（`SIGUSR1`、`SIGHUP`）驱动的，所以没有 Windows 版本。
+
+**预编译二进制**挂在每个
+[release](https://github.com/0x0079/tingly-shell/releases) 下面，由 CI 构建并生成校验和，
+配置见 [`.goreleaser.yaml`](.goreleaser.yaml)：
+
+```bash
+# 去 releases 页面挑自己 OS/ARCH 对应的包，例如 linux/amd64：
+curl -LO https://github.com/0x0079/tingly-shell/releases/latest/download/tingly-shell_<version>_linux_amd64.tar.gz
+tar xzf tingly-shell_<version>_linux_amd64.tar.gz
+sudo install -m 755 tingly-shell /usr/local/bin/tingly-shell
+```
+
+**用 Go 安装**（仓库公开后 module path 才能被拉取；需要 Go 1.26+）：
+
+```bash
+go install github.com/0x0079/tingly-shell/cmd/tingly-shell@latest
+```
+
+**从源码构建**：
+
+```bash
+git clone https://github.com/0x0079/tingly-shell.git
+cd tingly-shell
+go build ./cmd/tingly-shell
+```
+
+三种方式都会得到一个 `tingly-shell` 可执行文件（从源码构建的话是 `./tingly-shell`）。
+确认版本：`tingly-shell version`。
 
 ## 快速开始
 

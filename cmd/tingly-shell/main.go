@@ -30,12 +30,14 @@ Usage:
   tingly-shell client  --server HOST:7443 --listen 127.0.0.1:2222 --token-file FILE --pin sha256:...
   tingly-shell proxy   --server HOST:7443 --token-file FILE --pin sha256:...
   tingly-shell keygen --label laptop-mbp14 [--expires 2027-06-01]
+  tingly-shell version
 
 Modes:
   server   run next to sshd and bridge incoming streams to --target
   client   listen on a local TCP port; "ssh -p 2222 user@127.0.0.1"
   proxy    bridge stdin/stdout, for ssh -o ProxyCommand='tingly-shell proxy ...'
   keygen   mint a credential: a token for one device plus its server record
+  version  print the build version
 
 Signals:
   SIGUSR1  (client, proxy) drop the current link and reconnect, e.g. after a network change
@@ -43,6 +45,10 @@ Signals:
 
 Run "tingly-shell <mode> -h" for the flags of a mode.
 `
+
+// version is overridden at release build time via
+// -ldflags "-X main.version=...". See .goreleaser.yaml.
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -62,6 +68,9 @@ func main() {
 		err = runClient(ctx, os.Args[2:], true)
 	case "keygen":
 		err = runKeygen(os.Args[2:])
+	case "version", "-v", "--version":
+		fmt.Println("tingly-shell " + version)
+		return
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return

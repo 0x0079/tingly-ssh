@@ -1,0 +1,44 @@
+version: 2
+
+project_name: tingly-shell
+
+builds:
+  - id: tingly-shell
+    main: ./cmd/tingly-shell
+    binary: tingly-shell
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: tingly-shell
+    ids: [tingly-shell]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    files:
+      - README.md
+      - README.zh-CN.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: 0x0079
+    name: tingly-shell
+  prerelease: auto
