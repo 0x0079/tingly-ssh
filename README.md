@@ -86,6 +86,8 @@ trusted on first use and recorded in `~/.config/tingly-shell/known_servers`, the
 a session-bound resume ticket instead of signing again, so a FIDO key is touched once per
 session, not once per Wi-Fi switch. Revoking is deleting the line and sending SIGHUP.
 Design and threat analysis: [`.design/ssh-key-auth.pencil.md`](.design/ssh-key-auth.pencil.md).
+Step-by-step migration for an existing SSH setup, with a troubleshooting table:
+[`docs/09-migrating-from-ssh.md`](docs/09-migrating-from-ssh.md).
 
 **With per-device tokens** (CI, machines without an agent). Both methods can be enabled on
 the same server:

@@ -80,6 +80,7 @@ Host myserver
 `~/.config/tingly-shell/known_servers`（和 `known_hosts` 一样），公钥变了客户端直接拒绝。
 换网重连用与会话绑定的恢复凭证，不再重新签名，所以 FIDO 钥匙每个会话只碰一次。
 撤销 = 删一行 + `SIGHUP`。设计与威胁分析：[`.design/ssh-key-auth.pencil.md`](.design/ssh-key-auth.pencil.md)。
+已有 SSH 配置的人如何一步步切换（含排错表）：[`docs/09-migrating-from-ssh.md`](docs/09-migrating-from-ssh.md)。
 
 **每设备 token**（CI、没有 agent 的机器）。两种方式可以在同一台服务端上同时开启：
 
