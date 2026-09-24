@@ -28,6 +28,9 @@ type Hello struct {
 	Window    uint64
 	Token     []byte
 	States    []StreamState
+	// Ticket and Proofs are on the wire only when Flags has FlagKeyAuth.
+	Ticket []byte
+	Proofs []KeyProof
 }
 
 // HelloAck is the server's answer to Hello.
@@ -36,6 +39,9 @@ type HelloAck struct {
 	Reason string
 	Window uint64
 	States []StreamState
+	// Ticket is an optional trailing field: a resume ticket issued to a client
+	// that authenticated with a key. It is absent from the wire when empty.
+	Ticket []byte
 }
 
 // Open announces a new logical stream.
@@ -123,14 +129,28 @@ func (f *Hello) appendPayload(b []byte) []byte {
 	b = quicvarint.Append(b, f.Flags)
 	b = quicvarint.Append(b, f.Window)
 	b = appendBytes(b, f.Token)
-	return appendStates(b, f.States)
+	b = appendStates(b, f.States)
+	if f.Flags&FlagKeyAuth == 0 {
+		return b
+	}
+	b = appendBytes(b, f.Ticket)
+	b = quicvarint.Append(b, uint64(len(f.Proofs)))
+	for _, p := range f.Proofs {
+		b = appendBytes(b, p.PublicKey)
+		b = appendBytes(b, p.Signature)
+	}
+	return b
 }
 
 func (f *HelloAck) appendPayload(b []byte) []byte {
 	b = quicvarint.Append(b, f.Code)
 	b = appendString(b, f.Reason)
 	b = quicvarint.Append(b, f.Window)
-	return appendStates(b, f.States)
+	b = appendStates(b, f.States)
+	if len(f.Ticket) > 0 {
+		b = appendBytes(b, f.Ticket)
+	}
+	return b
 }
 
 func (f *Open) appendPayload(b []byte) []byte {
@@ -231,6 +251,26 @@ func (p *parser) stringField() string {
 	return string(p.raw(int(p.varint())))
 }
 
+func (p *parser) proofs() []KeyProof {
+	n := p.varint()
+	if p.err != nil {
+		return nil
+	}
+	if n > MaxKeyProofs {
+		p.err = fmt.Errorf("%w: %d key proofs, limit %d", ErrMalformed, n, MaxKeyProofs)
+		return nil
+	}
+	proofs := make([]KeyProof, 0, n)
+	for i := uint64(0); i < n; i++ {
+		kp := KeyProof{PublicKey: p.bytesField(), Signature: p.bytesField()}
+		if p.err != nil {
+			return nil
+		}
+		proofs = append(proofs, kp)
+	}
+	return proofs
+}
+
 func (p *parser) states() []StreamState {
 	n := p.varint()
 	if p.err != nil {
@@ -288,6 +328,10 @@ func ParseFrame(body []byte) (Frame, error) {
 		h.Window = p.varint()
 		h.Token = p.bytesField()
 		h.States = p.states()
+		if h.Flags&FlagKeyAuth != 0 {
+			h.Ticket = p.bytesField()
+			h.Proofs = p.proofs()
+		}
 		f = h
 	case TypeHelloAck:
 		h := &HelloAck{}
@@ -295,6 +339,9 @@ func ParseFrame(body []byte) (Frame, error) {
 		h.Reason = p.stringField()
 		h.Window = p.varint()
 		h.States = p.states()
+		if p.err == nil && len(p.b) > 0 {
+			h.Ticket = p.bytesField()
+		}
 		f = h
 	case TypeOpen:
 		o := &Open{}

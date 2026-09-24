@@ -5,9 +5,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -16,6 +18,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/0x0079/tingly-shell/internal/auth"
 	"github.com/0x0079/tingly-shell/internal/bridge"
@@ -26,9 +30,10 @@ import (
 const usage = `tingly-shell - SSH over QUIC with session resumption
 
 Usage:
-  tingly-shell server  --listen :7443 --target 127.0.0.1:22 --token-file FILE
-  tingly-shell client  --server HOST:7443 --listen 127.0.0.1:2222 --token-file FILE --pin sha256:...
-  tingly-shell proxy   --server HOST:7443 --token-file FILE --pin sha256:...
+  tingly-shell server  --listen :7443 --target 127.0.0.1:22 --authorized-keys FILE [--credentials FILE]
+  tingly-shell proxy   --server HOST:7443                      # SSH keys from ssh-agent, server key trusted on first use
+  tingly-shell client  --server HOST:7443 --listen 127.0.0.1:2222
+  tingly-shell proxy   --server HOST:7443 --token-file FILE --pin sha256:...   # token instead of keys
   tingly-shell keygen --label laptop-mbp14 [--expires 2027-06-01]
   tingly-shell version
 
@@ -41,7 +46,7 @@ Modes:
 
 Signals:
   SIGUSR1  (client, proxy) drop the current link and reconnect, e.g. after a network change
-  SIGHUP   (server) reload the credentials file; revoking a device is deleting its line
+  SIGHUP   (server) reload the credentials and authorized keys files; revoking is deleting a line
 
 Run "tingly-shell <mode> -h" for the flags of a mode.
 `
@@ -94,21 +99,33 @@ type commonFlags struct {
 	logLevel   string
 }
 
-func (c *commonFlags) bind(fs *flag.FlagSet) {
+// bind registers the shared flags. logLevel is the mode's default: proxy runs
+// inside ssh and writes to the user's terminal, so it defaults to warn and
+// stays quiet on every healthy (re)connect; the long-running modes log info.
+func (c *commonFlags) bind(fs *flag.FlagSet, logLevel string) {
 	fs.Uint64Var(&c.window, "window", proto.DefaultWindow, "per-stream receive window in bytes (also bounds replay memory)")
 	fs.IntVar(&c.maxStreams, "max-streams", 64, "maximum concurrent logical streams per session")
 	fs.DurationVar(&c.linger, "session-linger", 60*time.Second, "how long a session survives with no link before it is abandoned")
 	fs.DurationVar(&c.keepAlive, "keepalive", 5*time.Second, "QUIC keepalive period")
 	fs.DurationVar(&c.idle, "idle-timeout", 20*time.Second, "QUIC idle timeout; a dead path is detected after this long")
-	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn, error")
+	fs.StringVar(&c.logLevel, "log-level", logLevel, "log level: debug, info, warn, error")
 }
 
-func (c *commonFlags) logger() *slog.Logger {
+func (c *commonFlags) logger() *slog.Logger { return c.loggerTo(os.Stderr) }
+
+// loggerTo builds the process logger and makes it the default, which also
+// routes the standard library's log package through it at info level.
+// quic-go reports undersized UDP buffers with a bare log.Printf; without this
+// it would bypass --log-level and land in the terminal of every proxy user on
+// a host with default socket limits.
+func (c *commonFlags) loggerTo(w io.Writer) *slog.Logger {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(c.logLevel)); err != nil {
 		level = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	logger := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+	return logger
 }
 
 func (c *commonFlags) tuning() transport.Tuning {
@@ -121,6 +138,7 @@ func runServer(ctx context.Context, args []string) error {
 		listen     = fs.String("listen", ":7443", "UDP address to listen on")
 		targets    = fs.String("target", "127.0.0.1:22", "comma separated allowlist of TCP targets; the first is the default")
 		credFile   = fs.String("credentials", "", "file of client credentials: 'label sha256:<base64> [not-after]' per line")
+		keysFile   = fs.String("authorized-keys", "", "OpenSSH authorized_keys file of SSH keys (and cert-authority lines) allowed in")
 		tokenFile  = fs.String("token-file", "", "deprecated alias for --credentials; a file holding one raw shared token")
 		stateDir   = fs.String("state-dir", defaultStateDir("server"), "directory for the generated self-signed certificate")
 		certFile   = fs.String("cert", "", "TLS certificate (default: <state-dir>/cert.pem, generated if absent)")
@@ -130,7 +148,7 @@ func runServer(ctx context.Context, args []string) error {
 		maxPerCred = fs.Int("max-sessions-per-credential", 0, "per-credential session cap; 0 means unlimited")
 	)
 	var common commonFlags
-	common.bind(fs)
+	common.bind(fs, "info")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -139,12 +157,22 @@ func runServer(ctx context.Context, args []string) error {
 		return errors.New("pass either --credentials or --token-file, not both")
 	case *credFile == "" && *tokenFile != "":
 		*credFile = *tokenFile
-	case *credFile == "":
-		return errors.New("--credentials is required; create a credential with `tingly-shell keygen --label <device>`")
+	case *credFile == "" && *keysFile == "":
+		return errors.New("--authorized-keys or --credentials is required: list users' SSH public keys, or mint tokens with `tingly-shell keygen --label <device>`")
 	}
-	creds, err := auth.LoadStore(*credFile)
-	if err != nil {
-		return err
+	var creds *auth.Store
+	if *credFile != "" {
+		var err error
+		if creds, err = auth.LoadStore(*credFile); err != nil {
+			return err
+		}
+	}
+	var keys *auth.KeyStore
+	if *keysFile != "" {
+		var err error
+		if keys, err = auth.LoadKeyStore(*keysFile); err != nil {
+			return err
+		}
 	}
 	if *certFile == "" {
 		*certFile = filepath.Join(*stateDir, "cert.pem")
@@ -166,6 +194,7 @@ func runServer(ctx context.Context, args []string) error {
 		Listen:                   *listen,
 		Targets:                  splitList(*targets),
 		Credentials:              creds,
+		Keys:                     keys,
 		Window:                   common.window,
 		MaxStreams:               common.maxStreams,
 		MaxSessions:              *maxSess,
@@ -191,15 +220,29 @@ func runServer(ctx context.Context, args []string) error {
 		"max_streams_per_session", common.maxStreams,
 		"window_bytes", common.window,
 		"worst_case_memory_mib", cfg.WorstCaseMemory()/(1<<20))
-	if creds.Shared() {
+	switch {
+	case creds == nil:
+	case creds.Shared():
 		log.Warn("credentials file holds one shared token: no per-device identity, revocation or attribution",
 			"fix", "give each device its own credential, see docs/adr/0004-client-identity.md")
-	} else {
+	default:
 		log.Info("credentials loaded", "count", creds.Len(), "labels", strings.Join(creds.Labels(), ","))
+	}
+	if keys != nil {
+		log.Info("authorized keys loaded", "count", keys.Len(), "labels", strings.Join(keys.Labels(), ","))
 	}
 	log.Info("clients must pass this pin", "flag", "--pin "+pin)
 	go reloadOnSignal(ctx, srv, log)
 	return srv.Serve(ctx)
+}
+
+// defaultLogLevel is warn for proxy, whose stderr is the user's terminal, and
+// info for client and server.
+func defaultLogLevel(stdioMode bool) string {
+	if stdioMode {
+		return "warn"
+	}
+	return "info"
 }
 
 func runClient(ctx context.Context, args []string, stdioMode bool) error {
@@ -212,25 +255,23 @@ func runClient(ctx context.Context, args []string, stdioMode bool) error {
 		server     = fs.String("server", "", "tingly-shell server address, host:port (required)")
 		listen     = fs.String("listen", "127.0.0.1:2222", "local TCP address to accept ssh on (client mode only)")
 		target     = fs.String("target", "127.0.0.1:22", "target hint sent to the server")
-		tokenFile  = fs.String("token-file", "", "file holding the pre-shared token (required, mode 0600)")
-		pin        = fs.String("pin", "", "expected server key pin, sha256:<base64> (strongly recommended)")
+		tokenFile  = fs.String("token-file", "", "authenticate with this pre-shared token (mode 0600) instead of SSH keys")
+		identity   = fs.String("identity", "", "SSH key to authenticate with: a private key, or a .pub whose key is in ssh-agent (default: every ssh-agent key)")
+		knownFile  = fs.String("known-servers", defaultKnownServers(), "server keys trusted on first use, when authenticating with SSH keys and no --pin")
+		pin        = fs.String("pin", "", "expected server key pin, sha256:<base64>; required with --token-file unless the server has a CA-signed certificate")
 		serverName = fs.String("server-name", "", "TLS server name; defaults to the --server host")
 		insecure   = fs.Bool("insecure", false, "skip server certificate verification (development only)")
 	)
 	var common commonFlags
-	common.bind(fs)
+	common.bind(fs, defaultLogLevel(stdioMode))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *server == "" {
 		return errors.New("--server is required")
 	}
-	if *tokenFile == "" {
-		return errors.New("--token-file is required")
-	}
-	token, err := transport.LoadToken(*tokenFile)
-	if err != nil {
-		return err
+	if *tokenFile != "" && *identity != "" {
+		return errors.New("pass either --token-file or --identity, not both")
 	}
 	if *serverName == "" {
 		host, _, splitErr := net.SplitHostPort(*server)
@@ -240,15 +281,57 @@ func runClient(ctx context.Context, args []string, stdioMode bool) error {
 		*serverName = host
 	}
 	log := common.logger()
-	if *pin == "" && *insecure {
-		log.Warn("certificate verification disabled: the pre-shared token can be stolen by a man in the middle; use --pin")
+
+	var (
+		token   []byte
+		prover  *auth.Prover
+		tlsConf *tls.Config
+		err     error
+	)
+	if *tokenFile != "" {
+		if token, err = transport.LoadToken(*tokenFile); err != nil {
+			return err
+		}
+	} else {
+		if prover, err = auth.NewAgentProver(os.Getenv("SSH_AUTH_SOCK"), *identity); err != nil {
+			return err
+		}
+		// Fail now, not after a linger's worth of retries, when there is no
+		// key to sign with.
+		pubs, err := prover.Keys()
+		if err != nil {
+			return err
+		}
+		fps := make([]string, len(pubs))
+		for i, p := range pubs {
+			fps[i] = ssh.FingerprintSHA256(p)
+		}
+		log.Debug("authenticating with SSH keys", "source", prover.String(), "keys", strings.Join(fps, ","))
 	}
-	tlsConf, err := transport.ClientTLS(*serverName, *pin, *insecure)
+	switch {
+	case *pin != "" || *insecure:
+		if *pin == "" && token != nil {
+			log.Warn("certificate verification disabled: the pre-shared token can be stolen by a man in the middle; use --pin")
+		}
+		tlsConf, err = transport.ClientTLS(*serverName, *pin, *insecure)
+	case token != nil:
+		// A token is a secret, so it is never sent to a server trusted on
+		// first use; without a pin the system trust store applies.
+		tlsConf, err = transport.ClientTLS(*serverName, "", false)
+	default:
+		// SSH key proofs are bound to the connection and useless to anyone
+		// else, so trusting the server key on first use is safe
+		// (.design/ssh-key-auth.pencil.md §4).
+		known := transport.NewKnownServers(*knownFile)
+		tlsConf, err = transport.ClientTLSTrustOnFirstUse(*serverName, *server, known, func(got string) {
+			log.Warn("trusting this server key from now on", "server", *server, "pin", got, "file", known.Path())
+		})
+	}
 	if err != nil {
 		return err
 	}
 
-	cli, err := bridge.NewClient(bridge.ClientConfig{
+	cfg := bridge.ClientConfig{
 		Server:     *server,
 		Target:     *target,
 		Token:      token,
@@ -258,7 +341,11 @@ func runClient(ctx context.Context, args []string, stdioMode bool) error {
 		Tuning:     common.tuning(),
 		TLS:        tlsConf,
 		Logger:     log,
-	})
+	}
+	if prover != nil {
+		cfg.Keys = prover
+	}
+	cli, err := bridge.NewClient(cfg)
 	if err != nil {
 		return err
 	}
@@ -393,6 +480,12 @@ func defaultStateDir(role string) string {
 		return filepath.Join(dir, "tingly-shell", role)
 	}
 	return filepath.Join(".", ".tingly-shell", role)
+}
+
+// defaultKnownServers sits next to the role directories rather than inside
+// one: it is the user's record of servers, like ~/.ssh/known_hosts.
+func defaultKnownServers() string {
+	return filepath.Join(filepath.Dir(defaultStateDir("client")), "known_servers")
 }
 
 func host(a net.Addr) string {

@@ -60,9 +60,39 @@ from-source build). Check what you got: `tingly-shell version`.
 
 ## Quick start
 
+**With the SSH keys you already have** (recommended). The tunnel admits the keys in
+your ssh-agent, so there is no new secret to mint, copy or rotate, and no pin to
+configure:
+
 ```bash
 go build ./cmd/tingly-shell
 
+# Server, next to sshd. The allow list is plain authorized_keys format: copy the
+# users' public key lines (or a cert-authority line) into it.
+cat ~alice/.ssh/authorized_keys >> /etc/tingly/authorized_keys
+./tingly-shell server --listen :7443 --target 127.0.0.1:22 --authorized-keys /etc/tingly/authorized_keys
+
+# Client: one line in ~/.ssh/config, nothing else.
+Host myserver
+    ProxyCommand tingly-shell proxy --server %h:7443
+```
+
+The client signs with the keys in `SSH_AUTH_SOCK` (or `--identity FILE`). The signature is
+bound to the TLS connection it was made on, so a man in the middle cannot replay it, and
+it is framed as an OpenSSH `SSHSIG` with its own namespace, so it can never pass as an SSH
+login signature. Because nothing secret goes on the wire, the tunnel server's key is safely
+trusted on first use and recorded in `~/.config/tingly-shell/known_servers`, the way
+`known_hosts` works; a changed key stops the client. Reconnects after a network change use
+a session-bound resume ticket instead of signing again, so a FIDO key is touched once per
+session, not once per Wi-Fi switch. Revoking is deleting the line and sending SIGHUP.
+Design and threat analysis: [`.design/ssh-key-auth.pencil.md`](.design/ssh-key-auth.pencil.md).
+Step-by-step migration for an existing SSH setup, with a troubleshooting table:
+[`docs/09-migrating-from-ssh.md`](docs/09-migrating-from-ssh.md).
+
+**With per-device tokens** (CI, machines without an agent). Both methods can be enabled on
+the same server:
+
+```bash
 # Mint a credential per device. The token goes to the device; the record line
 # printed on stderr goes into the server's credentials file, which only ever
 # holds a hash.
@@ -76,13 +106,14 @@ go build ./cmd/tingly-shell
     --token-file token --pin sha256:...
 ssh -p 2222 user@127.0.0.1
 
-# Client B: ProxyCommand, recommended, no local listening port
+# Client B: ProxyCommand, no local listening port
 ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
 ```
 
-`--pin` and `--token-file` answer different questions and you need both. The pin is the
+With a token, `--pin` and `--token-file` answer different questions and you need both. The pin is the
 fingerprint of the server's public key, it is public and proves you reached the right
-server. The token is the actual secret and proves you are allowed in. Each device gets its
+server. The token is the actual secret and proves you are allowed in, which is also why a
+token is never sent to a server trusted on first use. Each device gets its
 own token, so one can be revoked by deleting its line and sending SIGHUP, sessions are
 bound to the credential that created them, and logs name the device. Details and common
 misconceptions: [`docs/04-security-model.md`](docs/04-security-model.md) §2.1. The same
@@ -119,18 +150,20 @@ Chinese; this README is the English entry point):
 | --- | --- |
 | `internal/proto` | `tingly/0` frame codec, built on quic-go's `quicvarint` |
 | `internal/mux` | Resumable session layer: Session, Stream, replay buffer, offset-based flow control |
-| `internal/transport` | QUIC dial/listen, TLS, self-signed certificates, SPKI pinning, token loading |
+| `internal/auth` | Client identities: hashed per-device tokens, authorized SSH keys and certificates, SSHSIG proofs, the ssh-agent prover |
+| `internal/transport` | QUIC dial/listen, TLS, self-signed certificates, SPKI pinning, TLS exporter, known servers (TOFU), token loading |
 | `internal/bridge` | Client (TCP/stdio entry plus reconnect supervisor), server (session registry plus target allowlist) |
 | `cmd/tingly-shell` | Subcommands `server`, `client`, `proxy`, `keygen` |
 
-One direct dependency: `github.com/quic-go/quic-go`. Everything else is the standard
-library; the reasoning is in ADR-0003.
+Two direct dependencies: `github.com/quic-go/quic-go` and `golang.org/x/crypto` (for
+`ssh` key parsing, certificates and the agent protocol; it was already in the module graph
+through quic-go). Everything else is the standard library; the reasoning is in ADR-0003.
 
 ## Verification
 
 ```bash
 go test -race ./...              # unit, session-layer fault injection, real QUIC
-./test/e2e/run.sh                # real sshd with real ssh/scp (14 cases)
+./test/e2e/run.sh                # real sshd with real ssh/scp/ssh-agent (18 cases)
 ./test/scenarios/run.sh          # everyday SSH usage (17 cases)
 ./test/roaming/selftest.sh       # the roaming suite against simulated faults (7 cases)
 ./test/roaming/run.sh            # the same suite against a real deployment and real radios

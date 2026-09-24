@@ -16,8 +16,8 @@
 
 | 风险 | 机制 |
 | --- | --- |
-| 客户端连到假服务端 | TLS 1.3（QUIC 内置）+ **SPKI pin**（`--pin sha256:<base64>`），或系统 CA + `--server-name` |
-| 未授权客户端接入 | **每设备一份 token**（服务端 `--credentials` 只存 `sha256(token)` + label + 可选有效期），TLS 内传输，常量时间比较 |
+| 客户端连到假服务端 | TLS 1.3（QUIC 内置）+ **SPKI pin**（`--pin sha256:<base64>`），或系统 CA + `--server-name`；用 SSH 密钥认证且未配 pin 时为 **TOFU**（`known_servers`，换钥即拒） |
+| 未授权客户端接入 | **SSH 密钥**（服务端 `--authorized-keys`，authorized_keys 格式，支持 `cert-authority`；签名绑定 TLS exporter，见 §3.2），或**每设备一份 token**（服务端 `--credentials` 只存 `sha256(token)` + label + 可选有效期），TLS 内传输，常量时间比较 |
 | 开放中继 | 服务端只连 `--target` 白名单；客户端 OPEN 里的 `target` 只是提示，不在白名单内即 RESET |
 | Session 劫持 | `SessionID` 为 16 字节 CSPRNG，且**只能在通过 token 认证的 TLS 连接上使用**；猜中 ID 也需要有效 token |
 | 旧链路抢占 / 重放 HELLO | `epoch` 单调递增，过期 HELLO 被拒（`EPOCH_STALE`） |
@@ -99,6 +99,26 @@ ci-runner-3        sha256:77de…                                    2026-12-31
   属于高保障场景的可选加强。
 - **撤销不会踢掉已建立的链路**：凭据只在建链时校验。见 §7 的两条结论。
 
+### 3.2 SSH 密钥认证（复用用户已有的钥匙）
+
+设计全文：[`.design/ssh-key-auth.pencil.md`](../.design/ssh-key-auth.pencil.md)。要点：
+
+- 客户端用 ssh-agent（或 `--identity` 指定的未加密私钥）签
+  `SSHSIG("tingly-shell-hello-v1", "tingly-shell hello v1" 0x00 || TLS-Exporter || session_id)`，
+  服务端用 `--authorized-keys`（OpenSSH authorized_keys 格式）判定。
+- **凭据不上线**：线上只有绑定到本条 TLS 连接的签名。中间人把它转发到真服务端，
+  exporter 对不上，验签失败。这正是 §3.1 里 token 做不到、ADR-0004 方案 B 想要的那一条。
+- 因为不上线，未配 pin 时可以安全地**首次信任**服务端公钥；token 模式永远不走 TOFU。
+- `SSHSIG` 魔数 + 专用 namespace：这些签名不可能被当成 SSH 登录签名，反之亦然。
+  拒绝 `ssh-dss` 与 SHA-1 的 `ssh-rsa` 签名；`sk-*` 要求 user-presence。
+- 身份是 `ssh:<公钥 SHA256 指纹>`（证书取内含公钥），日志 label 是注释或证书 KeyId；
+  会话绑定、每身份配额、审计归因与 token 相同。
+- 换网重连用服务端签发的**恢复凭证**（32 字节，服务端只存哈希，随会话消亡），不再调用 agent；
+  客户端只把它出示给签发它的那把服务端公钥。重连时服务端仍按当前白名单复查那把公钥，
+  所以**撤销语义与 token 相同**：删一行 + `SIGHUP` 后，该钥匙的会话无法再重连。
+- 服务端**不读**任何用户的 `~/.ssh/authorized_keys`，也不读 `/etc/ssh` 的主机私钥。
+  `from=` 选项会让整份文件加载失败：隧道无法替 sshd 执行它，不能让管理员误以为它生效了。
+
 ## 4. 密钥与证书管理
 
 - 服务端首次启动若无 `--cert`/`--key`，生成 Ed25519 自签名证书并持久化到 `--state-dir`，
@@ -169,7 +189,7 @@ ci-runner-3        sha256:77de…                                    2026-12-31
 | R-4 | **握手无速率限制** | token 暴力不可行，但可用于刷日志、耗 TLS 握手 CPU | 未修。修法：按源地址令牌桶 + 认证失败告警 |
 | R-5 | token 无过期、无撤销、无标识 | 分不清是哪台设备在用；丢设备只能全员换 token 并停机 | **已修**：每设备一份凭据，带 label 与可选 `not-after`；撤销 = 删一行 + `SIGHUP`，不停机、不影响其他设备 |
 | R-6 | 证书有效期 10 年 | 与 pin 模式不矛盾（pin 的是公钥），但不符合常规做法 | **已修**：生成的自签证书有效期 825 天；续期时保持密钥不变则 pin 不变，客户端无需改配置 |
-| R-7 | `--insecure` 跳过证书校验 | 中间人可窃取 token | 启动时已告警；文档反复强调必须用 `--pin`。仅供本机开发 |
+| R-7 | `--insecure` 跳过证书校验 | 中间人可窃取 token | 启动时已告警；文档反复强调必须用 `--pin`。仅供本机开发。**用 SSH 密钥认证时此风险不存在**：签名绑定连接，中间人拿不到可复用的东西（§3.2） |
 | R-8 | 隧道服务端是新增的对外暴露面（UDP 端口） | 一旦有远程漏洞即为入口 | 以非 root 运行 + systemd 沙箱 + 最小白名单，见 §9 |
 | R-9 | 元数据对服务端可见：目标提示、会话数、时间与流量模式 | 可做流量分析 | 设计使然；日志默认不含 payload，只打印会话 ID 前 8 位 |
 | R-10 | 重放攻击面 | — | 已缓解：TLS 1.3 提供前向保密；**0-RTT 未启用**，因此没有 0-RTT 重放问题 |

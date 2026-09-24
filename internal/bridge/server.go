@@ -2,6 +2,9 @@ package bridge
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"errors"
 	"log/slog"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/0x0079/tingly-shell/internal/auth"
 	"github.com/0x0079/tingly-shell/internal/mux"
@@ -57,6 +61,10 @@ type ServerConfig struct {
 	// Token is wrapped as a single shared credential.
 	Credentials *auth.Store
 	Token       []byte // pre-shared token, for callers that have no file
+	// Keys admits clients that prove an SSH key listed in an authorized keys
+	// file (.design/ssh-key-auth.pencil.md). A server may accept tokens, keys
+	// or both.
+	Keys        *auth.KeyStore
 	Window      uint64
 	MaxStreams  int
 	MaxSessions int // concurrent sessions this server will hold
@@ -77,6 +85,25 @@ type Server struct {
 
 	mu       sync.Mutex
 	sessions map[proto.SessionID]*mux.Session
+	// tickets holds the resume ticket of each key-authenticated session, keyed
+	// by the session itself so an evicted session's ticket dies with it.
+	tickets map[*mux.Session]ticket
+}
+
+// ticket lets a key-authenticated session reconnect without a new signature.
+// Only its hash is kept, and the key it was issued to, so revoking that key
+// still stops the session from coming back.
+type ticket struct {
+	hash [32]byte
+	key  ssh.PublicKey
+}
+
+// principal is who a HELLO authenticated as.
+type principal struct {
+	identity string // what the session binds to
+	label    string // what logs show
+	method   string // token, ssh-key or ticket
+	key      ssh.PublicKey
 }
 
 // NewServer binds the QUIC listener.
@@ -93,17 +120,21 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if len(cfg.Targets) == 0 {
 		return nil, errors.New("bridge: server needs at least one target")
 	}
-	if cfg.Credentials == nil {
-		if len(cfg.Token) == 0 {
-			return nil, errors.New("bridge: server needs credentials or a token")
-		}
+	if cfg.Credentials == nil && len(cfg.Token) > 0 {
 		cfg.Credentials = auth.Single(cfg.Token)
+	}
+	if cfg.Credentials == nil && cfg.Keys == nil {
+		return nil, errors.New("bridge: server needs credentials, a token or authorized keys")
 	}
 	ln, err := transport.Listen(cfg.Listen, cfg.TLS, cfg.Tuning)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, log: cfg.Logger, ln: ln, sessions: make(map[proto.SessionID]*mux.Session)}, nil
+	return &Server{
+		cfg: cfg, log: cfg.Logger, ln: ln,
+		sessions: make(map[proto.SessionID]*mux.Session),
+		tickets:  make(map[*mux.Session]ticket),
+	}, nil
 }
 
 // sessionCount and linkedCount expose registry state for tests.
@@ -133,11 +164,22 @@ func (s *Server) Addr() net.Addr { return s.ln.Addr() }
 // because a credential is only checked when a link is built
 // (docs/04-security-model.md §7).
 func (s *Server) ReloadCredentials() error {
-	if err := s.cfg.Credentials.Reload(); err != nil {
-		return err
+	var errs []error
+	if c := s.cfg.Credentials; c != nil && c.Path() != "" {
+		if err := c.Reload(); err != nil {
+			errs = append(errs, err)
+		} else {
+			s.log.Info("credentials reloaded", "count", c.Len())
+		}
 	}
-	s.log.Info("credentials reloaded", "count", s.cfg.Credentials.Len())
-	return nil
+	if k := s.cfg.Keys; k != nil && k.Path() != "" {
+		if err := k.Reload(); err != nil {
+			errs = append(errs, err)
+		} else {
+			s.log.Info("authorized keys reloaded", "count", k.Len())
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Close stops accepting and terminates every live session.
@@ -231,7 +273,20 @@ func (s *Server) handleConn(ctx context.Context, conn *quic.Conn) error {
 		return err
 	}
 
-	sess, err := s.resolveSession(ctx, hello)
+	exporter, err := transport.Exporter(conn)
+	if err != nil {
+		_ = pc.Close()
+		return err
+	}
+	var remote net.IP
+	if udp, ok := conn.RemoteAddr().(*net.UDPAddr); ok {
+		remote = udp.IP
+	}
+	who, err := s.authenticate(hello, exporter, remote)
+	var sess *mux.Session
+	if err == nil {
+		sess, err = s.resolveSession(ctx, hello, who)
+	}
 	if err != nil {
 		var he *HandshakeError
 		if errors.As(err, &he) {
@@ -243,6 +298,14 @@ func (s *Server) handleConn(ctx context.Context, conn *quic.Conn) error {
 	}
 
 	ack := &proto.HelloAck{Code: proto.CodeOK, Window: sess.Window(), States: sess.States()}
+	if who.method == "ssh-key" {
+		// A fresh signature earns a fresh ticket; the previous one, if any,
+		// stops working.
+		if ack.Ticket, err = s.issueTicket(sess, who.key); err != nil {
+			_ = pc.Close()
+			return err
+		}
+	}
 	if err := pc.WriteAndFlush(ack); err != nil {
 		_ = pc.Close()
 		return err
@@ -250,7 +313,7 @@ func (s *Server) handleConn(ctx context.Context, conn *quic.Conn) error {
 	// The credential label is the only attributable identity in the log: the
 	// target's sshd sees this server's address, not the user's (risk R-1).
 	s.log.Info("link accepted",
-		"session", hello.SessionID.Short(), "credential", sess.Identity(),
+		"session", hello.SessionID.Short(), "credential", who.label, "auth", who.method,
 		"epoch", hello.Epoch, "remote", conn.RemoteAddr().String(),
 		"streams", len(hello.States))
 	return sess.Attach(pc, hello.Window, hello.States)
@@ -268,11 +331,42 @@ func refuse(pc *proto.Conn, ack *proto.HelloAck) {
 // read the reason before the connection is torn down.
 const refusalFlushTimeout = 2 * time.Second
 
-// resolveSession authenticates the HELLO and returns the session it belongs
-// to, creating one if this is a fresh session.
-func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.Session, error) {
+// authenticate decides who a HELLO speaks for. A token, a set of key proofs
+// and a resume ticket are the three ways in; exactly one must be present.
+func (s *Server) authenticate(hello *proto.Hello, exporter []byte, remote net.IP) (principal, error) {
 	if hello.Version != proto.Version {
-		return nil, &HandshakeError{Code: proto.CodeUnsupportedVersion, Reason: "unsupported protocol version"}
+		return principal{}, &HandshakeError{Code: proto.CodeUnsupportedVersion, Reason: "unsupported protocol version"}
+	}
+	if hello.Flags&proto.FlagKeyAuth == 0 {
+		return s.authenticateToken(hello)
+	}
+	if s.cfg.Keys == nil {
+		return principal{}, s.refuseAuth("this server does not accept SSH keys; use --token-file", "")
+	}
+	if len(hello.Token) > 0 || (len(hello.Ticket) > 0) == (len(hello.Proofs) > 0) {
+		return principal{}, &HandshakeError{Code: proto.CodeProtocol, Reason: "present exactly one of a token, a ticket or key proofs"}
+	}
+	if len(hello.Ticket) > 0 {
+		return s.authenticateTicket(hello, remote)
+	}
+	id, err := s.cfg.Keys.Verify(hello.Proofs, auth.HelloMessage(exporter, hello.SessionID), remote, time.Now())
+	if err != nil {
+		reason := "no offered SSH key is authorized"
+		switch {
+		case errors.Is(err, auth.ErrExpired):
+			reason = "SSH key expired"
+		case errors.Is(err, auth.ErrBadSignature):
+			reason = "SSH key signature does not match this connection"
+		}
+		s.log.Warn("key auth failed", "detail", err.Error())
+		return principal{}, s.refuseAuth(reason, id.Label)
+	}
+	return principal{identity: id.ID, label: id.Label, method: "ssh-key", key: id.Key}, nil
+}
+
+func (s *Server) authenticateToken(hello *proto.Hello) (principal, error) {
+	if s.cfg.Credentials == nil {
+		return principal{}, s.refuseAuth("this server only accepts SSH keys; drop --token-file", "")
 	}
 	cred, err := s.cfg.Credentials.Lookup(hello.Token)
 	if err != nil {
@@ -282,25 +376,79 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 			// like a mysterious rejection on the client side.
 			reason = "credential expired"
 		}
-		s.log.Warn("handshake refused", "reason", reason, "credential", cred.Label)
-		return nil, &HandshakeError{Code: proto.CodeUnauthorized, Reason: reason}
+		return principal{}, s.refuseAuth(reason, cred.Label)
 	}
+	return principal{identity: cred.Label, label: cred.Label, method: "token"}, nil
+}
 
+// authenticateTicket admits a reconnect of a key-authenticated session. The
+// ticket proves it is the same client; the key it was issued to is checked
+// again against the current authorized keys, so revocation still bites.
+func (s *Server) authenticateTicket(hello *proto.Hello, remote net.IP) (principal, error) {
+	if hello.Flags&proto.FlagResume == 0 {
+		return principal{}, &HandshakeError{Code: proto.CodeProtocol, Reason: "a ticket can only resume a session"}
+	}
+	s.mu.Lock()
+	sess, known := s.sessions[hello.SessionID]
+	t, issued := s.tickets[sess]
+	s.mu.Unlock()
+	if !known {
+		return principal{}, &HandshakeError{Code: proto.CodeSessionUnknown, Reason: "unknown session"}
+	}
+	got := sha256.Sum256(hello.Ticket)
+	if !issued || subtle.ConstantTimeCompare(got[:], t.hash[:]) != 1 {
+		return principal{}, s.refuseAuth("invalid resume ticket", "")
+	}
+	id, err := s.cfg.Keys.Authorize(t.key, remote, time.Now())
+	if err != nil {
+		reason := "SSH key is no longer authorized"
+		if errors.Is(err, auth.ErrExpired) {
+			reason = "SSH key expired"
+		}
+		return principal{}, s.refuseAuth(reason, id.Label)
+	}
+	return principal{identity: id.ID, label: id.Label, method: "ticket", key: t.key}, nil
+}
+
+func (s *Server) refuseAuth(reason, label string) error {
+	s.log.Warn("handshake refused", "reason", reason, "credential", label)
+	return &HandshakeError{Code: proto.CodeUnauthorized, Reason: reason}
+}
+
+// issueTicket mints a resume ticket for sess, replacing any earlier one.
+func (s *Server) issueTicket(sess *mux.Session, key ssh.PublicKey) ([]byte, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cur := s.sessions[sess.ID()]; cur != sess {
+		// The session went away between the handshake and now.
+		return nil, errors.New("bridge: session closed before its ticket was issued")
+	}
+	s.tickets[sess] = ticket{hash: sha256.Sum256(raw), key: key}
+	return raw, nil
+}
+
+// resolveSession returns the session an authenticated HELLO belongs to,
+// creating one if this is a fresh session.
+func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello, who principal) (*mux.Session, error) {
 	s.mu.Lock()
 	sess, known := s.sessions[hello.SessionID]
 	if known {
 		// A session belongs to the credential that created it. Knowing a
 		// session id is not enough to take it over.
-		if sess.Identity() != cred.Label {
+		if sess.Identity() != who.identity {
 			s.mu.Unlock()
 			s.log.Warn("refused a session takeover",
-				"session", hello.SessionID.Short(), "owner", sess.Identity(), "presented", cred.Label)
+				"session", hello.SessionID.Short(), "owner", sess.Identity(), "presented", who.identity)
 			return nil, &HandshakeError{Code: proto.CodeUnauthorized, Reason: "session belongs to another credential"}
 		}
 	} else {
-		if n := s.cfg.MaxSessionsPerCredential; n > 0 && s.countForLocked(cred.Label) >= n {
+		if n := s.cfg.MaxSessionsPerCredential; n > 0 && s.countForLocked(who.identity) >= n {
 			s.mu.Unlock()
-			s.log.Warn("credential is at its session limit", "credential", cred.Label, "limit", n)
+			s.log.Warn("credential is at its session limit", "credential", who.label, "limit", n)
 			return nil, &HandshakeError{Code: proto.CodeResourceExhausted, Reason: "credential session limit reached"}
 		}
 		if len(s.sessions) >= s.cfg.MaxSessions && !s.evictOneDetachedLocked() {
@@ -318,7 +466,7 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 		sess = mux.New(mux.Config{
 			Role:       mux.RoleServer,
 			SessionID:  hello.SessionID,
-			Identity:   cred.Label,
+			Identity:   who.identity,
 			Window:     s.cfg.Window,
 			MaxStreams: s.cfg.MaxStreams,
 			Logger:     s.cfg.Logger,
@@ -333,10 +481,11 @@ func (s *Server) resolveSession(ctx context.Context, hello *proto.Hello) (*mux.S
 			if cur := s.sessions[hello.SessionID]; cur == sess {
 				delete(s.sessions, hello.SessionID)
 			}
+			delete(s.tickets, sess)
 			s.mu.Unlock()
 			s.log.Info("session closed", "session", hello.SessionID.Short(),
 				"credential", label, "err", sess.Err())
-		}(cred.Label)
+		}(who.label)
 	}
 	if known {
 		s.mu.Unlock()

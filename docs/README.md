@@ -31,10 +31,12 @@ sshd
 | [06-testing.md](06-testing.md) | 测试分层、故障注入手法 | 持续更新 |
 | [07-verification-plan.md](07-verification-plan.md) | **验收清单**：L0–L5 用例表、判定标准、归档方式 | 持续更新 |
 | [08-jump-host-topologies.md](08-jump-host-topologies.md) | 跳板机/多跳场景：server 放哪、ssh 配置片段、做不到的情况 | 已定稿 (v0) |
+| [09-migrating-from-ssh.md](09-migrating-from-ssh.md) | **从直连 SSH 切换**：用已有的 SSH 密钥，服务端一次、客户端一行，含排错表 | 持续更新 |
 | [adr/0001-transport-choice.md](adr/0001-transport-choice.md) | 为什么选 QUIC bridge 而不是 MPTCP / 改 SSH | 已接受 |
 | [adr/0002-resumable-session-layer.md](adr/0002-resumable-session-layer.md) | 为什么在 QUIC 之上再加一层会话层 | 已接受 |
 | [adr/0003-library-choices.md](adr/0003-library-choices.md) | 依赖选型：quic-go / quicvarint / 标准库 | 已接受 |
-| [adr/0004-client-identity.md](adr/0004-client-identity.md) | 客户端身份：mTLS 而非自研 HMAC 挑战-响应 | **提议中** |
+| [adr/0004-client-identity.md](adr/0004-client-identity.md) | 客户端身份：每设备 token；§9 由复用 SSH 密钥取代 mTLS | 已接受 |
+| [../.design/ssh-key-auth.pencil.md](../.design/ssh-key-auth.pencil.md) | 复用 SSH 密钥做隧道认证 + 服务端公钥首次信任 | 已实现 |
 
 ## 文档驱动的工作方式
 
