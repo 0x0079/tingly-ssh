@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -110,12 +111,21 @@ func (c *commonFlags) bind(fs *flag.FlagSet, logLevel string) {
 	fs.StringVar(&c.logLevel, "log-level", logLevel, "log level: debug, info, warn, error")
 }
 
-func (c *commonFlags) logger() *slog.Logger {
+func (c *commonFlags) logger() *slog.Logger { return c.loggerTo(os.Stderr) }
+
+// loggerTo builds the process logger and makes it the default, which also
+// routes the standard library's log package through it at info level.
+// quic-go reports undersized UDP buffers with a bare log.Printf; without this
+// it would bypass --log-level and land in the terminal of every proxy user on
+// a host with default socket limits.
+func (c *commonFlags) loggerTo(w io.Writer) *slog.Logger {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(c.logLevel)); err != nil {
 		level = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	logger := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+	return logger
 }
 
 func (c *commonFlags) tuning() transport.Tuning {
