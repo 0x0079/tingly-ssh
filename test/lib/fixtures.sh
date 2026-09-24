@@ -217,7 +217,9 @@ start_client() {
 # key_host_block prints the ssh config for SSH key authentication: no token
 # and no pin. The tunnel client signs with the key in ssh-agent (the same one
 # ssh logs in with) and trusts the tunnel server's key on first use, which is
-# the one-line migration .design/ssh-key-auth.pencil.md aims at. Only suites
+# the one-line migration .design/ssh-key-auth.pencil.md aims at. No
+# --log-level either: E15 checks that proxy's default keeps the terminal
+# quiet on a healthy connection. Only suites
 # that run a key server define KEY_TUNNEL_PORT.
 key_host_block() {
     [ -n "${KEY_TUNNEL_PORT:-}" ] || return 0
@@ -225,7 +227,7 @@ key_host_block() {
 Host tingly-keys
     HostName 127.0.0.1
     Port $SSHD_PORT
-    ProxyCommand $BIN proxy --server 127.0.0.1:$KEY_TUNNEL_PORT --target 127.0.0.1:$SSHD_PORT --known-servers $ART/known_servers --log-level warn
+    ProxyCommand $BIN proxy --server 127.0.0.1:$KEY_TUNNEL_PORT --target 127.0.0.1:$SSHD_PORT --known-servers $ART/known_servers
 EOF
 }
 

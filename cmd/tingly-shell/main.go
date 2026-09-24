@@ -98,13 +98,16 @@ type commonFlags struct {
 	logLevel   string
 }
 
-func (c *commonFlags) bind(fs *flag.FlagSet) {
+// bind registers the shared flags. logLevel is the mode's default: proxy runs
+// inside ssh and writes to the user's terminal, so it defaults to warn and
+// stays quiet on every healthy (re)connect; the long-running modes log info.
+func (c *commonFlags) bind(fs *flag.FlagSet, logLevel string) {
 	fs.Uint64Var(&c.window, "window", proto.DefaultWindow, "per-stream receive window in bytes (also bounds replay memory)")
 	fs.IntVar(&c.maxStreams, "max-streams", 64, "maximum concurrent logical streams per session")
 	fs.DurationVar(&c.linger, "session-linger", 60*time.Second, "how long a session survives with no link before it is abandoned")
 	fs.DurationVar(&c.keepAlive, "keepalive", 5*time.Second, "QUIC keepalive period")
 	fs.DurationVar(&c.idle, "idle-timeout", 20*time.Second, "QUIC idle timeout; a dead path is detected after this long")
-	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn, error")
+	fs.StringVar(&c.logLevel, "log-level", logLevel, "log level: debug, info, warn, error")
 }
 
 func (c *commonFlags) logger() *slog.Logger {
@@ -135,7 +138,7 @@ func runServer(ctx context.Context, args []string) error {
 		maxPerCred = fs.Int("max-sessions-per-credential", 0, "per-credential session cap; 0 means unlimited")
 	)
 	var common commonFlags
-	common.bind(fs)
+	common.bind(fs, "info")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -223,6 +226,15 @@ func runServer(ctx context.Context, args []string) error {
 	return srv.Serve(ctx)
 }
 
+// defaultLogLevel is warn for proxy, whose stderr is the user's terminal, and
+// info for client and server.
+func defaultLogLevel(stdioMode bool) string {
+	if stdioMode {
+		return "warn"
+	}
+	return "info"
+}
+
 func runClient(ctx context.Context, args []string, stdioMode bool) error {
 	name := "client"
 	if stdioMode {
@@ -241,7 +253,7 @@ func runClient(ctx context.Context, args []string, stdioMode bool) error {
 		insecure   = fs.Bool("insecure", false, "skip server certificate verification (development only)")
 	)
 	var common commonFlags
-	common.bind(fs)
+	common.bind(fs, defaultLogLevel(stdioMode))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

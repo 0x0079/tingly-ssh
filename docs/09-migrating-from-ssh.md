@@ -163,8 +163,7 @@ alice@myserver:~$
 只有核对过，才能确定记下的就是你自己的服务器。
 如果想完全跳过"首次信任"，把 pin 直接写进配置：`--pin sha256:XUYr8w...`。
 
-默认 `info` 级别下，每次建链（包括换网重连）都会在终端上打一行 `link established`。
-嫌吵的话在 ProxyCommand 末尾加 `--log-level warn`；首次信任的告警和各类错误仍会显示。
+`proxy` 默认日志级别是 `warn`：连接正常时终端上什么都不打印，只有首次信任的告警、重连失败和各类错误才会显示。
 
 ### 3.3 验证漫游真的生效
 
@@ -241,6 +240,6 @@ Host internal-*
 | 一直 `reconnect failed … timeout: handshake did not complete in time` | UDP 端口不通 | 检查防火墙和安全组的 **UDP** 规则 |
 | ssh 报 `Host key verification failed` | 这是里层 SSH 的 `known_hosts`，和隧道无关 | 与直连时的处理方式相同 |
 
-隧道客户端的日志打在 ssh 的 stderr 上。默认 `info` 级别下，每次建链都会打印一行 `link established`，
-行尾的 `auth=ssh-key` 表示签名建链，`auth=ticket` 表示用恢复凭证重连。
-要看更细的过程，加 `--log-level debug`。
+隧道客户端的日志打在 ssh 的 stderr 上，`proxy` 默认只打 `warn` 及以上。
+想看每次建链，加 `--log-level info`：每次都会打印一行 `link established`，行尾的 `auth=ssh-key`
+表示签名建链，`auth=ticket` 表示用恢复凭证重连。要看更细的过程，用 `--log-level debug`。

@@ -369,12 +369,16 @@ case_E15() {
     again=$(SSH_AUTH_SOCK=$AGENT_SOCK SSH_TIMEOUT=60 tssh tingly-keys 'echo E15-AGAIN' 2>"$ART/E15.2.err")
     # The server log names the key's comment, not a shared token.
     attributed=$(grep -c 'credential=tingly-e2e auth=ssh-key' "$KEY_SERVER_LOG")
+    # proxy defaults to warn: its stderr is the user's terminal, so a healthy
+    # login prints nothing at all, while the first-use warning still shows.
+    local noise
+    noise=$(grep -c 'level=INFO' "$ART/E15.err" "$ART/E15.2.err" | awk -F: '{s+=$2} END {print s+0}')
     if [ "$out" = "E15-OK" ] && [ "$again" = "E15-AGAIN" ] && [ "$learned" -eq 1 ] && \
        [ "$attributed" -ge 2 ] && grep -q 'trusting this server key' "$ART/E15.err" && \
-       ! grep -q 'trusting' "$ART/E15.2.err"; then
+       [ "$noise" -eq 0 ] && [ ! -s "$ART/E15.2.err" ]; then
         record E15 PASS "ssh via ssh-agent key only, server key learned on first use, second login silent"
     else
-        record E15 FAIL "out='$out' again='$again' learned=$learned attributed=$attributed (stderr: $(head -c 200 "$ART/E15.err"))"
+        record E15 FAIL "out='$out' again='$again' learned=$learned attributed=$attributed noise=$noise (stderr: $(head -c 200 "$ART/E15.err"))"
     fi
 }
 
