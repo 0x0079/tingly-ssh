@@ -340,6 +340,120 @@ case_E14() {
 }
 
 # ---------------------------------------------------------------------------
+# Key authentication (.design/ssh-key-auth.pencil.md): the tunnel admits the
+# SSH key the user already has, so migrating is one ProxyCommand line with no
+# token and no pin.
+# ---------------------------------------------------------------------------
+
+# ensure_key_server starts the key server once; cases can run on their own.
+ensure_key_server() {
+    [ -n "${KEY_SERVER_PID:-}" ] && kill -0 "$KEY_SERVER_PID" 2>/dev/null && return 0
+    start_ssh_agent
+    # The tunnel's allow list is the very file sshd uses: one list of keys.
+    cp "$SSH_KEYS/authorized_keys" "$ART/tunnel_authorized_keys"
+    start_tunnel_server_with_keys keys "$KEY_TUNNEL_PORT" "$ART/tunnel_authorized_keys" "$ART/server-state-keys"
+}
+
+# ---------------------------------------------------------------------------
+# E15 ssh through ProxyCommand with only ssh-agent: no token, no pin; the
+#     tunnel server key is learned on first use
+# ---------------------------------------------------------------------------
+case_E15() {
+    ensure_key_server
+    rm -f "$ART/known_servers"
+    local out learned attributed
+    out=$(SSH_AUTH_SOCK=$AGENT_SOCK SSH_TIMEOUT=60 tssh tingly-keys 'echo E15-OK' 2>"$ART/E15.err")
+    learned=$(grep -cF "127.0.0.1:$KEY_TUNNEL_PORT $KEY_SERVER_PIN" "$ART/known_servers" 2>/dev/null)
+    # A second login must match the recorded key silently.
+    local again
+    again=$(SSH_AUTH_SOCK=$AGENT_SOCK SSH_TIMEOUT=60 tssh tingly-keys 'echo E15-AGAIN' 2>"$ART/E15.2.err")
+    # The server log names the key's comment, not a shared token.
+    attributed=$(grep -c 'credential=tingly-e2e auth=ssh-key' "$KEY_SERVER_LOG")
+    if [ "$out" = "E15-OK" ] && [ "$again" = "E15-AGAIN" ] && [ "$learned" -eq 1 ] && \
+       [ "$attributed" -ge 2 ] && grep -q 'trusting this server key' "$ART/E15.err" && \
+       ! grep -q 'trusting' "$ART/E15.2.err"; then
+        record E15 PASS "ssh via ssh-agent key only, server key learned on first use, second login silent"
+    else
+        record E15 FAIL "out='$out' again='$again' learned=$learned attributed=$attributed (stderr: $(head -c 200 "$ART/E15.err"))"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# E16 a key-authenticated session survives two forced link drops, and the
+#     reconnects use the resume ticket instead of asking the agent again
+# ---------------------------------------------------------------------------
+case_E16() {
+    ensure_key_server
+    SSH_AUTH_SOCK=$AGENT_SOCK CLIENT_AUTH=keys TUNNEL_PORT=$KEY_TUNNEL_PORT \
+        start_client e16 "127.0.0.1:$SSHD_PORT"
+    wait_log "$CLIENT_LOG" "link established" 15 || { record E16 FAIL "no link"; return; }
+    ( SSH_TIMEOUT=90 tssh -p "$CLIENT_PORT" tingly-local \
+        'for i in $(seq 1 20); do echo line$i; sleep 0.4; done' > "$ART/E16.out" 2>"$ART/E16.err" ) &
+    local sshpid=$!
+    sleep 2; kill -USR1 "$CLIENT_PID"
+    sleep 2; kill -USR1 "$CLIENT_PID"
+    wait $sshpid
+    local rc=$? lines last signed ticketed
+    lines=$(wc -l < "$ART/E16.out")
+    last=$(tail -1 "$ART/E16.out")
+    signed=$(grep -c 'link established.*auth=ssh-key' "$CLIENT_LOG")
+    ticketed=$(grep -c 'link established.*auth=ticket' "$CLIENT_LOG")
+    if [ $rc -eq 0 ] && [ "$lines" -eq 20 ] && [ "$last" = "line20" ] && [ "$signed" -eq 1 ] && [ "$ticketed" -ge 2 ]; then
+        record E16 PASS "20/20 lines across 2 drops; 1 signature, $ticketed ticket reconnects"
+    else
+        record E16 FAIL "rc=$rc lines=$lines last=$last signed=$signed ticketed=$ticketed"
+    fi
+    kill_quiet "$CLIENT_PID"
+}
+
+# ---------------------------------------------------------------------------
+# E17 a key that is not in the tunnel's authorized keys is refused at once,
+#     and the client stops instead of retrying (--identity, no agent)
+# ---------------------------------------------------------------------------
+case_E17() {
+    ensure_key_server
+    rm -f "$ART/stranger" "$ART/stranger.pub"
+    ssh-keygen -q -t ed25519 -N '' -f "$ART/stranger" -C stranger </dev/null || die "stranger key"
+    SSH_AUTH_SOCK= CLIENT_NO_WAIT=1 CLIENT_AUTH=keys TUNNEL_PORT=$KEY_TUNNEL_PORT \
+        start_client e17 "127.0.0.1:$SSHD_PORT" --identity "$ART/stranger" --session-linger 5s
+    wait_exit "$CLIENT_PID" 20
+    local retries
+    retries=$(grep -c 'reconnect failed' "$CLIENT_LOG")
+    if [ "$WAIT_RC" != "0" ] && [ "$WAIT_RC" != "124" ] && grep -q 'no offered SSH key is authorized' "$CLIENT_LOG" && [ "$retries" -eq 0 ]; then
+        record E17 PASS "unknown key refused in ${WAIT_ELAPSED}s, no retries"
+    else
+        record E17 FAIL "rc=$WAIT_RC retries=$retries elapsed=${WAIT_ELAPSED}s"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# E18 the tunnel server comes back with a different key: trust on first use
+#     refuses it and names the known_servers line to delete
+# ---------------------------------------------------------------------------
+case_E18() {
+    ensure_key_server
+    # Make sure the real key is on record, then swap the server's key.
+    SSH_AUTH_SOCK=$AGENT_SOCK SSH_TIMEOUT=60 tssh tingly-keys true 2>/dev/null
+    kill_quiet "$KEY_SERVER_PID"
+    start_tunnel_server_with_keys keys-rotated "$KEY_TUNNEL_PORT" "$ART/tunnel_authorized_keys" "$ART/server-state-keys-rotated"
+    SSH_AUTH_SOCK=$AGENT_SOCK CLIENT_NO_WAIT=1 CLIENT_AUTH=keys TUNNEL_PORT=$KEY_TUNNEL_PORT \
+        start_client e18 "127.0.0.1:$SSHD_PORT" --session-linger 5s
+    wait_exit "$CLIENT_PID" 30
+    local accepted retries
+    accepted=$(grep -c 'link accepted' "$KEY_SERVER_LOG")
+    retries=$(grep -c 'reconnect failed' "$CLIENT_LOG")
+    if [ "$WAIT_RC" != "0" ] && [ "$WAIT_RC" != "124" ] && grep -q 'server key changed' "$CLIENT_LOG" && \
+       grep -q "delete line 1 of $ART/known_servers" "$CLIENT_LOG" && [ "$accepted" -eq 0 ] && [ "$retries" -eq 0 ]; then
+        record E18 PASS "rotated server key refused in ${WAIT_ELAPSED}s without retries; known_servers line named"
+    else
+        record E18 FAIL "rc=$WAIT_RC accepted=$accepted retries=$retries (see $CLIENT_LOG)"
+    fi
+    # Leave a server with the original key for any case that runs later.
+    kill_quiet "$KEY_SERVER_PID"
+    KEY_SERVER_PID=
+}
+
+# ---------------------------------------------------------------------------
 
 main() {
     mkdir -p "$ART"
@@ -355,7 +469,7 @@ main() {
     start_tunnel_server
     write_ssh_config
 
-    local all=(E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13 E14) id
+    local all=(E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13 E14 E15 E16 E17 E18) id
     for id in "${all[@]}"; do
         if ! selected "$id"; then continue; fi
         if [ $QUICK -eq 1 ] && { [ "$id" = E8 ] || [ "$id" = E9 ]; }; then

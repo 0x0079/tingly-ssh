@@ -59,9 +59,31 @@ go build ./cmd/tingly-shell
 
 ## 快速开始
 
+**直接复用已有的 SSH 密钥**（推荐）。隧道认 ssh-agent 里的钥匙：不用生成、分发、轮换新秘密，
+也不用配 pin：
+
 ```bash
 go build ./cmd/tingly-shell
 
+# 服务端：和 sshd 同机。白名单就是 authorized_keys 格式，把用户的公钥行（或 cert-authority 行）复制进去
+cat ~alice/.ssh/authorized_keys >> /etc/tingly/authorized_keys
+./tingly-shell server --listen :7443 --target 127.0.0.1:22 --authorized-keys /etc/tingly/authorized_keys
+
+# 客户端：~/.ssh/config 里一行，别的都不用配
+Host myserver
+    ProxyCommand tingly-shell proxy --server %h:7443
+```
+
+客户端用 `SSH_AUTH_SOCK` 里的钥匙（或 `--identity FILE`）签名。签名绑定在这一条 TLS 连接上，
+中间人拿去重放无效；签名套了 OpenSSH `SSHSIG` 格式并带专用 namespace，不可能被挪用成 SSH 登录签名。
+线上不传任何秘密，所以隧道服务端的公钥可以安全地"首次信任"，记在
+`~/.config/tingly-shell/known_servers`（和 `known_hosts` 一样），公钥变了客户端直接拒绝。
+换网重连用与会话绑定的恢复凭证，不再重新签名，所以 FIDO 钥匙每个会话只碰一次。
+撤销 = 删一行 + `SIGHUP`。设计与威胁分析：[`.design/ssh-key-auth.pencil.md`](.design/ssh-key-auth.pencil.md)。
+
+**每设备 token**（CI、没有 agent 的机器）。两种方式可以在同一台服务端上同时开启：
+
+```bash
 # 每台设备一份凭据：token 给设备，stderr 上打印的记录行加进服务端的凭据文件
 # （服务端只存哈希，不存 token 本身）
 ./tingly-shell keygen --label laptop-mbp14 > token && chmod 600 token
@@ -74,7 +96,7 @@ go build ./cmd/tingly-shell
     --token-file token --pin sha256:...
 ssh -p 2222 user@127.0.0.1
 
-# 客户端 B：ProxyCommand（推荐，无本地监听端口）
+# 客户端 B：ProxyCommand（无本地监听端口）
 ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
 ```
 
@@ -82,7 +104,7 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 其余照常用 OpenSSH 的 `ProxyJump`。只有第一跳会因为换网而断，保护它就够了。
 配置片段与边界条件见 [`docs/08-jump-host-topologies.md`](docs/08-jump-host-topologies.md)。
 
-`--pin` 和 `--token-file` 回答的是两个不同的问题，两个都要配。pin 是服务端公钥的指纹，
+用 token 时，`--pin` 和 `--token-file` 回答的是两个不同的问题，两个都要配（token 是秘密，所以永远不会发给"首次信任"的服务端）。pin 是服务端公钥的指纹，
 公开信息，证明"连对了机器"；token 才是真正的密码，证明"你有资格接入"。
 每台设备一份 token，所以撤销一台只需删掉一行再 `SIGHUP`；会话绑定到创建它的凭据，
 日志里也能看出是哪台设备。
@@ -113,17 +135,18 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 | --- | --- |
 | `internal/proto` | `tingly/0` 帧编解码（基于 quic-go 的 `quicvarint`） |
 | `internal/mux` | 可恢复会话层：Session / Stream / 重放缓冲 / 偏移量流控 |
-| `internal/transport` | QUIC dial/listen、TLS、自签证书、SPKI pin、token 加载 |
+| `internal/auth` | 客户端身份：哈希存储的每设备 token、授权 SSH 公钥与证书、SSHSIG 签名证明、ssh-agent 签名器 |
+| `internal/transport` | QUIC dial/listen、TLS、自签证书、SPKI pin、TLS exporter、known_servers（首次信任）、token 加载 |
 | `internal/bridge` | client（TCP/stdio 接入 + 重连 supervisor）、server（会话注册表 + 目标白名单） |
 | `cmd/tingly-shell` | `server` / `client` / `proxy` / `keygen` 四个子命令 |
 
-直接依赖只有一个：`github.com/quic-go/quic-go`。其余全部用标准库，理由见 ADR-0003。
+直接依赖两个：`github.com/quic-go/quic-go` 与 `golang.org/x/crypto`（用其 `ssh` 包解析公钥、证书和 agent 协议；它本来就经由 quic-go 在依赖图里）。其余全部用标准库，理由见 ADR-0003。
 
 ## 验证
 
 ```bash
 go test -race ./...              # 单元 + 会话层故障注入 + 真 QUIC
-./test/e2e/run.sh                # 真 sshd + 真 ssh/scp 端到端（14 个用例）
+./test/e2e/run.sh                # 真 sshd + 真 ssh/scp/ssh-agent 端到端（18 个用例）
 ./test/scenarios/run.sh          # 日常 SSH 使用场景（17 个用例）
 ./test/roaming/selftest.sh       # 漫游套件 + 模拟故障，自证 harness（7 个用例）
 ./test/roaming/run.sh            # 同一套件跑真实部署与真实无线电

@@ -151,7 +151,24 @@ const (
 	// id is simply a new session, even when the HELLO already carries streams
 	// the application opened before the first link existed.
 	FlagResume uint64 = 1 << 0
+
+	// FlagKeyAuth says the client authenticates with SSH keys rather than a
+	// token: the HELLO carries a resume ticket and/or key proofs after its
+	// stream states (.design/ssh-key-auth.pencil.md §2.2). Servers only put a
+	// ticket in HELLO_ACK when this flag was set, so older clients never see
+	// the extra field.
+	FlagKeyAuth uint64 = 1 << 1
 )
+
+// MaxKeyProofs bounds how many keys one HELLO may offer.
+const MaxKeyProofs = 8
+
+// KeyProof is one SSH public key and its signature over the HELLO's binding
+// message, both in SSH wire format.
+type KeyProof struct {
+	PublicKey []byte
+	Signature []byte
+}
 
 // Stream state flags exchanged during resumption.
 const (

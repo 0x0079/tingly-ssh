@@ -10,7 +10,7 @@
 ```
 
 - 用例清单与判定标准：`docs/07-verification-plan.md` §2
-- 依赖：`go`、`ssh`、`/usr/sbin/sshd`、`python3`
+- 依赖：`go`、`ssh`、`ssh-agent`、`ssh-add`、`ssh-keygen`、`/usr/sbin/sshd`、`python3`
 - 复用已有二进制：`TINGLY_BIN=/path/to/tingly-shell ./run.sh`
 - 结果与全部日志：`artifacts/<时间戳>/`（`results.md` 是结果表）
 

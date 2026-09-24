@@ -140,17 +140,67 @@ mint_credential() {
     grep -E "^$label[[:space:]]+sha256:" "$ART/$label.keygen"
 }
 
+# start_ssh_agent runs a private ssh-agent holding the suite's SSH key, the
+# same key ssh logs in to sshd with: key authentication to the tunnel reuses
+# it, which is the whole point (.design/ssh-key-auth.pencil.md). Sets
+# AGENT_SOCK; nothing is exported, so cases opt in per command.
+start_ssh_agent() {
+    [ -n "${AGENT_SOCK:-}" ] && return 0
+    command -v ssh-agent >/dev/null || die "ssh-agent is not installed"
+    # Unix socket paths are limited to ~100 bytes; keep it off the deep
+    # artifacts path.
+    local dir
+    dir=$(mktemp -d /tmp/tingly-agent.XXXXXX)
+    AGENT_SOCK=$dir/agent.sock
+    ssh-agent -D -a "$AGENT_SOCK" > "$ART/ssh-agent.log" 2>&1 &
+    AGENT_PID=$!
+    track "$AGENT_PID"
+    wait_file "$AGENT_SOCK" 10 || die "ssh-agent did not start"
+    SSH_AUTH_SOCK=$AGENT_SOCK ssh-add -q "$SSH_KEYS/id_ed25519" </dev/null || die "ssh-add failed"
+    info "ssh-agent at $AGENT_SOCK (pid $AGENT_PID) holding $(SSH_AUTH_SOCK=$AGENT_SOCK ssh-add -l | awk '{print $2}')"
+}
+
+# start_tunnel_server_with_keys NAME PORT KEYSFILE [STATE_DIR] starts a server
+# that admits SSH keys listed in an authorized_keys file, and no tokens.
+# Sets KEY_SERVER_PID, KEY_SERVER_LOG and KEY_SERVER_PIN.
+start_tunnel_server_with_keys() {
+    local name=$1 port=$2 keysfile=$3 state=${4:-$ART/server-state-$1}
+    require_port_free "$port" "key server $name"
+    KEY_SERVER_LOG=$ART/tunnel-server-$name.log
+    "$BIN" server \
+        --listen "127.0.0.1:$port" \
+        --target "127.0.0.1:$SSHD_PORT" \
+        --authorized-keys "$keysfile" \
+        --state-dir "$state" \
+        --log-level "${TUNNEL_LOG_LEVEL:-info}" \
+        > "$KEY_SERVER_LOG" 2>&1 &
+    KEY_SERVER_PID=$!
+    track "$KEY_SERVER_PID"
+    wait_log "$KEY_SERVER_LOG" "server listening" 15 || die "key server did not start (see $KEY_SERVER_LOG)"
+    KEY_SERVER_PIN=$(grep -o 'sha256:[A-Za-z0-9+/=]*' "$KEY_SERVER_LOG" | head -1)
+    info "key server '$name' on udp/$port (pid $KEY_SERVER_PID)"
+}
+
 # start_client NAME TARGET [extra flags...] -> CLIENT_PORT, CLIENT_PID, CLIENT_LOG
+#
+# By default the client authenticates with the suite token and pins the
+# server. CLIENT_AUTH=keys switches to SSH keys: no token, no pin, and the
+# server key trusted on first use via CLIENT_KNOWN_SERVERS.
 start_client() {
     local name=$1 target=$2; shift 2
     CLIENT_PORT=$((NEXT_CLIENT_PORT++))
     CLIENT_LOG=$ART/client-$name.log
+    local auth=()
+    if [ "${CLIENT_AUTH:-token}" = keys ]; then
+        auth=(--known-servers "${CLIENT_KNOWN_SERVERS:-$ART/known_servers}")
+    else
+        auth=(--token-file "${CLIENT_TOKEN_FILE:-$ART/token}" --pin "${CLIENT_PIN:-$PIN}")
+    fi
     "$BIN" client \
         --server "127.0.0.1:$TUNNEL_PORT" \
         --listen "127.0.0.1:$CLIENT_PORT" \
         --target "$target" \
-        --token-file "${CLIENT_TOKEN_FILE:-$ART/token}" \
-        --pin "${CLIENT_PIN:-$PIN}" \
+        "${auth[@]}" \
         --log-level "${CLIENT_LOG_LEVEL:-info}" \
         "$@" > "$CLIENT_LOG" 2>&1 &
     CLIENT_PID=$!
@@ -162,6 +212,21 @@ start_client() {
         wait_log "$CLIENT_LOG" "client listening" 10 || die "client $name did not listen"
     fi
     return 0
+}
+
+# key_host_block prints the ssh config for SSH key authentication: no token
+# and no pin. The tunnel client signs with the key in ssh-agent (the same one
+# ssh logs in with) and trusts the tunnel server's key on first use, which is
+# the one-line migration .design/ssh-key-auth.pencil.md aims at. Only suites
+# that run a key server define KEY_TUNNEL_PORT.
+key_host_block() {
+    [ -n "${KEY_TUNNEL_PORT:-}" ] || return 0
+    cat <<EOF
+Host tingly-keys
+    HostName 127.0.0.1
+    Port $SSHD_PORT
+    ProxyCommand $BIN proxy --server 127.0.0.1:$KEY_TUNNEL_PORT --target 127.0.0.1:$SSHD_PORT --known-servers $ART/known_servers --log-level warn
+EOF
 }
 
 # ssh_config writes a config that adds a ProxyCommand host and a direct host.
@@ -176,6 +241,8 @@ Host tingly-proxy
 
 Host tingly-local
     HostName 127.0.0.1
+
+$(key_host_block)
 
 # Two hops: ssh reaches the jump host through the tunnel, then the jump host
 # forwards to the machine behind it with stock direct-tcpip. Nothing on the

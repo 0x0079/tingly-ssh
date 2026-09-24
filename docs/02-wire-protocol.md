@@ -16,8 +16,8 @@ frame := frame_len(varint) || type(varint) || payload
 
 | type | 名称 | payload |
 | --- | --- | --- |
-| 0x01 | `HELLO` | `version(v) session_id(16B) epoch(v) flags(v) window(v) token(bytes) n(v) state×n` |
-| 0x02 | `HELLO_ACK` | `code(v) reason(bytes) window(v) n(v) state×n` |
+| 0x01 | `HELLO` | `version(v) session_id(16B) epoch(v) flags(v) window(v) token(bytes) n(v) state×n` 〔`KEY_AUTH` 时追加 `ticket(bytes) m(v) proof×m`〕 |
+| 0x02 | `HELLO_ACK` | `code(v) reason(bytes) window(v) n(v) state×n` 〔可选尾字段 `ticket(bytes)`〕 |
 | 0x03 | `OPEN` | `stream_id(v) target(bytes)` |
 | 0x04 | `DATA` | `stream_id(v) offset(v) data(bytes)` |
 | 0x05 | `ACK` | `stream_id(v) recv_offset(v) read_offset(v)` |
@@ -59,6 +59,28 @@ client                                   server
 | 未知 session | 0 | 新建 session；HELLO 里的 states 由客户端重放 `OPEN` 补齐 |
 | 未知 session | 1 | 回 `SESSION_UNKNOWN`（通常是服务端重启过） |
 | 已知 session | 任意 | 按 `epoch` 决定接管或 `EPOCH_STALE` |
+
+`HELLO.flags` bit1 `KEY_AUTH`：客户端用 SSH 密钥而不是 token 认证
+（设计见 [`.design/ssh-key-auth.pencil.md`](../.design/ssh-key-auth.pencil.md)）。置位时 `token` 必须为空，
+`states` 之后追加：
+
+```
+ticket(bytes) m(v) proof×m          m ≤ 8
+proof := public_key(bytes) signature(bytes)      均为 SSH wire 格式
+```
+
+`ticket` 与 `proof` 恰好出现一种：
+
+- **proofs**：每把钥匙对 `SSHSIG(namespace="tingly-shell-hello-v1", SHA-512(M))` 的签名，
+  `M = "tingly-shell hello v1" 0x00 || E || session_id`，
+  `E = TLS-Exporter("EXPORTER-tingly-shell-hello", "", 32)`。服务端用自己一侧的 `E` 重算 `M`，
+  所以签名只在这条连接上有效（channel binding）。
+- **ticket**：`RESUME` 必须置位；服务端按会话核对 `SHA-256(ticket)`，并按当前白名单重新检查签发时的公钥。
+
+签名认证成功时，`HELLO_ACK` 在 `states` 之后带上新的 32 字节 `ticket`（旧的作废）。
+这个尾字段只回给 `KEY_AUTH` 的 HELLO，所以旧客户端永远看不到它；不置 `KEY_AUTH` 的 HELLO
+与旧版线格式逐字节相同。因此 `PROTOCOL_VERSION` 不变；唯一的不兼容是"新客户端用 SSH 密钥连旧服务端"，
+旧服务端会把尾部字节当作协议错误。
 
 `HELLO_ACK.code`：
 

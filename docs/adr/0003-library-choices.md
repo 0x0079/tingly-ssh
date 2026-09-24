@@ -12,11 +12,15 @@
 | 变长整数编码 | `quic-go/quicvarint`（同仓库子包） | 同上 | MIT |
 | TLS 1.3 / 自签证书 / SPKI pin | 标准库 `crypto/tls`、`crypto/x509`、`crypto/ed25519` | — | — |
 | token 比较 / 未来 HMAC | 标准库 `crypto/subtle`、`crypto/hmac` | — | — |
+| SSH 公钥 / 证书 / agent 协议（ssh-key 认证） | `golang.org/x/crypto/ssh`、`ssh/agent` | Go 团队维护；原本就是 quic-go 的间接依赖 | BSD-3 |
 | 日志 | 标准库 `log/slog` | — | — |
 | CLI | 标准库 `flag` + 子命令分发 | — | — |
 | 测试 | 标准库 `testing` + `net.Pipe` 故障注入 | — | — |
 
-`go.mod` 的 `require` 里只有 quic-go（`golang.org/x/crypto|net|sys` 是它的间接依赖）。
+`go.mod` 的直接依赖是 quic-go 和 `golang.org/x/crypto`（后者原本就是 quic-go 的间接依赖，
+为 ssh-key 认证改为直接依赖，见 `.design/ssh-key-auth.pencil.md`；`x/net|sys` 仍是间接依赖）。
+authorized_keys、OpenSSH 证书与 agent 协议都不自己解析：这些格式的边界情况很多，
+自写解析器正是 ADR-0003 一开始就决定不做的事。
 
 ## 2. QUIC 实现调研
 

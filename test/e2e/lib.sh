@@ -9,6 +9,7 @@ ART=${ART_DIR:-$REPO_ROOT/test/e2e/artifacts/$RUN_ID}
 SSHD_PORT=${SSHD_PORT:-2022}                # stands in for the jump host
 TARGET_SSHD_PORT=${TARGET_SSHD_PORT:-2224}  # stands in for the machine behind it
 TUNNEL_PORT=${TUNNEL_PORT:-7450}
+KEY_TUNNEL_PORT=${KEY_TUNNEL_PORT:-7452}    # the server that admits SSH keys
 ECHO_PORT=${ECHO_PORT:-2023}
 NEXT_CLIENT_PORT=${NEXT_CLIENT_PORT:-2300}
 

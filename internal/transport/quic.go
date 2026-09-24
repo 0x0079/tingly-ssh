@@ -78,6 +78,36 @@ func (l *Link) SetReadDeadline(t time.Time) error { return l.stream.SetReadDeadl
 // connection migrates.
 func (l *Link) RemoteAddr() net.Addr { return l.conn.RemoteAddr() }
 
+// ExporterLabel is the RFC 8446 §7.5 exporter label for the HELLO binding
+// message. Both ends derive the same 32 bytes from the TLS master secret; a
+// man in the middle ends up with two different values, one per side.
+const ExporterLabel = "EXPORTER-tingly-shell-hello"
+
+// Exporter returns this connection's channel binding value.
+func (l *Link) Exporter() ([]byte, error) {
+	return Exporter(l.conn)
+}
+
+// Exporter derives the channel binding value of a QUIC connection.
+func Exporter(conn *quic.Conn) ([]byte, error) {
+	state := conn.ConnectionState().TLS
+	out, err := state.ExportKeyingMaterial(ExporterLabel, nil, 32)
+	if err != nil {
+		return nil, fmt.Errorf("transport: export keying material: %w", err)
+	}
+	return out, nil
+}
+
+// PeerPin returns the SPKI pin of the certificate the server presented, or ""
+// if there was none.
+func (l *Link) PeerPin() string {
+	certs := l.conn.ConnectionState().TLS.PeerCertificates
+	if len(certs) == 0 {
+		return ""
+	}
+	return Pin(certs[0])
+}
+
 // Close shuts the stream and the connection underneath it.
 func (l *Link) Close() error {
 	l.stream.CancelRead(0)

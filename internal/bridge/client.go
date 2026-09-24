@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/0x0079/tingly-shell/internal/auth"
 	"github.com/0x0079/tingly-shell/internal/mux"
 	"github.com/0x0079/tingly-shell/internal/proto"
 	"github.com/0x0079/tingly-shell/internal/transport"
@@ -25,15 +26,24 @@ const (
 
 // ClientConfig configures the ssh-side bridge.
 type ClientConfig struct {
-	Server     string // QUIC server address
-	Target     string // target hint sent in OPEN
-	Token      []byte
+	Server string // QUIC server address
+	Target string // target hint sent in OPEN
+	Token  []byte
+	// Keys authenticates with SSH keys instead of Token
+	// (.design/ssh-key-auth.pencil.md). Exactly one of the two is set.
+	Keys       KeyProver
 	Window     uint64
 	MaxStreams int
 	Linger     time.Duration // give up on the session after this long with no link
 	Tuning     transport.Tuning
 	TLS        *tls.Config
 	Logger     *slog.Logger
+}
+
+// KeyProver signs a HELLO binding message with the user's SSH keys.
+// auth.Prover is the real one.
+type KeyProver interface {
+	Prove(message []byte) ([]proto.KeyProof, error)
 }
 
 // Client owns one resumable session and the supervisor that keeps a link under it.
@@ -43,6 +53,12 @@ type Client struct {
 	sess     *mux.Session
 	epoch    atomic.Uint64
 	resuming atomic.Bool // set once the server has acknowledged this session
+
+	// ticket lets a key-authenticated session reconnect without signing
+	// again; ticketPin is the server key it was issued by, and the only one
+	// it is ever shown to. Both are touched only by the Run goroutine.
+	ticket    []byte
+	ticketPin string
 }
 
 // NewClient creates the session. Run drives the reconnect loop; the Serve
@@ -53,6 +69,9 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}
 	if cfg.Linger == 0 {
 		cfg.Linger = 60 * time.Second
+	}
+	if (cfg.Keys == nil) == (len(cfg.Token) == 0) {
+		return nil, errors.New("bridge: client needs exactly one of a token or SSH keys")
 	}
 	id, err := proto.NewSessionID()
 	if err != nil {
@@ -107,6 +126,13 @@ func (c *Client) Run(ctx context.Context) error {
 				c.sess.Close(he.Code, he.Reason)
 				return err
 			}
+			// A known server presenting another key is what an attack looks
+			// like; like ssh, stop rather than keep knocking.
+			if errors.Is(err, transport.ErrServerKeyChanged) {
+				c.log.Error("server key changed, refusing to connect", "err", err)
+				c.sess.Close(proto.CodeShutdown, "server key changed")
+				return err
+			}
 			if over := time.Since(downSince); over > c.cfg.Linger {
 				c.log.Error("giving up on session", "down_for", over.Round(time.Second), "err", err)
 				c.sess.Close(proto.CodeTimeout, "reconnect window exhausted")
@@ -159,6 +185,14 @@ func (c *Client) connect(ctx context.Context) (*proto.Conn, uint64, []proto.Stre
 	if c.resuming.Load() {
 		hello.Flags |= proto.FlagResume
 	}
+	method := "token"
+	serverPin := link.PeerPin()
+	if c.cfg.Keys != nil {
+		if method, err = c.proveKeys(link, hello, serverPin); err != nil {
+			_ = pc.Close()
+			return nil, 0, nil, err
+		}
+	}
 	ack, err := clientHandshake(pc, hello)
 	if err != nil {
 		_ = pc.Close()
@@ -167,12 +201,38 @@ func (c *Client) connect(ctx context.Context) (*proto.Conn, uint64, []proto.Stre
 	// From here on the server holds state for this session id, so later
 	// handshakes must declare themselves as resumptions.
 	c.resuming.Store(true)
+	if len(ack.Ticket) > 0 {
+		c.ticket, c.ticketPin = ack.Ticket, serverPin
+	}
 	if err := link.SetReadDeadline(time.Time{}); err != nil {
 		_ = pc.Close()
 		return nil, 0, nil, err
 	}
-	c.log.Info("link established", "server", link.RemoteAddr().String(), "epoch", hello.Epoch)
+	c.log.Info("link established", "server", link.RemoteAddr().String(), "epoch", hello.Epoch, "auth", method)
 	return pc, ack.Window, ack.States, nil
+}
+
+// proveKeys fills in the key authentication fields of hello. A reconnect
+// shows the resume ticket instead of asking the keys to sign again, which is
+// what keeps a FIDO key from needing a touch on every network change; but
+// only to the server key that issued the ticket. A signature is bound to this
+// one connection and is safe to show anyone, a ticket is not.
+func (c *Client) proveKeys(link *transport.Link, hello *proto.Hello, serverPin string) (string, error) {
+	hello.Flags |= proto.FlagKeyAuth
+	if c.ticket != nil && serverPin != "" && serverPin == c.ticketPin && c.resuming.Load() {
+		hello.Ticket = c.ticket
+		return "ticket", nil
+	}
+	exporter, err := link.Exporter()
+	if err != nil {
+		return "", err
+	}
+	proofs, err := c.cfg.Keys.Prove(auth.HelloMessage(exporter, hello.SessionID))
+	if err != nil {
+		return "", err
+	}
+	hello.Proofs = proofs
+	return "ssh-key", nil
 }
 
 // ServeListener bridges every accepted TCP connection over its own stream.
