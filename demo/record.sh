@@ -8,8 +8,9 @@
 # Nothing is simulated inside tingly-shell or ssh. The "laptop" is a network
 # namespace joined to the host by a veth pair; the events are an address
 # change and the link going down, the same things the kernel sees when a
-# radio switches or drops. The remote side runs a counter, so continuity (no
-# missing or repeated numbers) is visible in the recording itself.
+# radio switches or drops. The remote side runs a long job with a progress
+# bar, and the script checks that every progress update reached the terminal
+# in order and exactly once before it shows the closing caption.
 #
 # Needs root, iproute2, OpenSSH (client and server), tmux, bc and python3, and
 # changes network state: run it in a throwaway VM or container.
@@ -27,7 +28,7 @@ OUT=${OUT:-$HERE/out}
 W=$OUT/work
 OUTAGE=${OUTAGE:-15}
 COLS=${COLS:-112}
-ROWS=${ROWS:-26}
+ROWS=${ROWS:-9}
 NS=tingly-demo
 SOCK=tingly-demo
 
@@ -63,17 +64,26 @@ ssh-keygen -q -t ed25519 -N '' -f "$W/host_key" </dev/null
 ssh-keygen -q -t ed25519 -N '' -f "$W/home/.ssh/id_ed25519" -C laptop </dev/null
 cp "$W/home/.ssh/id_ed25519.pub" "$W/authorized_keys"
 
-# The remote "work": one numbered line every half second.
-cat > "$W/bin/heartbeat" <<'EOF'
-#!/bin/sh
-i=0
-while :; do
-    i=$((i + 1))
-    printf '%s  build step %03d  ok\n' "$(date +%T)" "$i"
-    sleep 0.5
-done
+# The remote "work": a long job with a progress bar, the kind of thing people
+# leave running over SSH. It redraws one line per update; each update names
+# its sequence number, which is what the continuity check counts.
+JOB_STEPS=${JOB_STEPS:-150}
+cat > "$W/bin/reindex" <<EOF
+#!/usr/bin/env python3
+import sys, time
+N, W = $JOB_STEPS, 24
+t0 = time.time()
+out = sys.stdout
+out.write("rebuilding the search index: %d shards\\n\\n" % N)
+for i in range(1, N + 1):
+    time.sleep(0.3)
+    fill, el = i * W // N, int(time.time() - t0)
+    out.write("\\x1b[1A\\x1b[2K\\x1b[32m%s\\x1b[90m%s\\x1b[0m %3d%%  shard %03d/%d  %02d:%02d\\n"
+              % ("\u2588" * fill, "\u2591" * (W - fill), i * 100 // N, i, N, el // 60, el % 60))
+    out.flush()
+out.write("\\x1b[1;32m\u2713 done:\\x1b[0m all %d shards indexed in %02d:%02d\\n" % (N, el // 60, el % 60))
 EOF
-chmod +x "$W/bin/heartbeat"
+chmod +x "$W/bin/reindex"
 
 cat > "$W/sshd_config" <<EOF
 Port 2222
@@ -122,8 +132,14 @@ Host *
 EOF
 
 # ssh reads ~/.ssh/config from the passwd entry, not $HOME: point it at ours.
+# The wrapper also keeps a copy of everything ssh writes to the terminal, per
+# host, so the continuity check reads exactly the bytes the viewer saw.
 mkdir -p "$W/laptop-bin"
-printf '#!/bin/sh\nexec /usr/bin/ssh -F "%s" "$@"\n' "$W/home/.ssh/config" > "$W/laptop-bin/ssh"
+cat > "$W/laptop-bin/ssh" <<EOF
+#!/bin/bash
+exec > >(tee -a "$W/stdout-\$1.log")
+exec /usr/bin/ssh -F "$W/home/.ssh/config" "\$@"
+EOF
 chmod +x "$W/laptop-bin/ssh"
 LAPTOP_ENV=(env -i HOME="$W/home" PATH="$W/laptop-bin:$W/bin:/usr/bin:/bin:/usr/sbin"
     TERM=xterm-256color LANG=C.UTF-8)
@@ -166,15 +182,15 @@ type_in() { # pane text: type like a person
     for ((i = 0; i < ${#s}; i++)); do T send-keys -t "demo:0.$p" -l "${s:i:1}"; sleep 0.04; done
 }
 
-caption "#[fg=colour75]Same laptop, same server. Left: plain ssh.  Right: ssh through tingly-shell."
+caption "#[fg=colour75]Same laptop, same server, same long job. Left: plain ssh.  Right: ssh through tingly-shell."
 python3 "$HERE/cast.py" "$OUT/demo.cast" "$COLS" "$ROWS" -- tmux -L "$SOCK" attach -t demo &
 REC=$!
 REC_START=$(date +%s.%N)
 sleep 1.5
 T send-keys -t demo:0.0 C-l; T send-keys -t demo:0.1 C-l
 sleep 0.8
-type_in 0 "ssh devbox heartbeat"; T send-keys -t demo:0.0 Enter
-type_in 1 "ssh devbox-tingly heartbeat"; T send-keys -t demo:0.1 Enter
+type_in 0 "ssh devbox reindex"; T send-keys -t demo:0.0 Enter
+type_in 1 "ssh devbox-tingly reindex"; T send-keys -t demo:0.1 Enter
 sleep 6
 
 mark switch
@@ -192,26 +208,40 @@ for ((s = OUTAGE; s > 0; s--)); do
 done
 ip netns exec "$NS" ip link set tdemo1 up
 mark back
-caption "#[fg=colour114]Back online: the same session resumes, and every line printed meanwhile arrives"
-sleep ${RESUME_WAIT:-22}
+caption "#[fg=colour114]Back online: the same session resumes and catches up with the job"
 
-caption "#[fg=colour114]Same ssh session, nothing re-run, no line lost or repeated. sshd untouched."
-sleep 5
+# Wait for the job to finish on the right, then check what actually reached
+# the terminal: every progress update, in order, exactly once. Only a passing
+# check earns the closing caption.
+TLOG=$W/stdout-devbox-tingly.log
+for ((i = 0; i < ${RESUME_WAIT:-40}; i++)); do
+    grep -q 'done:' "$TLOG" 2>/dev/null && break
+    sleep 1
+done
+sleep 1
+if VERDICT=$(python3 - "$TLOG" "$JOB_STEPS" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+n = int(sys.argv[2])
+seen = [int(m) for m in re.findall(r"shard (\d+)/%d" % n, text)]
+ok = seen == list(range(1, n + 1)) and "done:" in text
+print(f"{len(seen)}/{n} progress updates, in order, none repeated" if ok
+      else f"FAILED: {len(seen)} updates, first problem near {next((i + 1 for i, v in enumerate(seen) if v != i + 1), len(seen) + 1)}")
+sys.exit(0 if ok else 1)
+PY
+); then
+    caption "#[fg=colour114]Checked: all $VERDICT. Same ssh session, sshd untouched."
+    sleep 6
+else
+    echo "continuity check $VERDICT (see $TLOG)" >&2
+    kill "$REC"; exit 1
+fi
 kill "$REC"; wait "$REC" 2>/dev/null || true
-# The whole scrollback of both panes, so the claim "no lost or repeated lines"
-# is checked rather than eyeballed.
 T capture-pane -p -S - -t demo:0.0 > "$OUT/plain-ssh.txt"
 T capture-pane -p -S - -t demo:0.1 > "$OUT/tingly.txt"
 T kill-server
-python3 - "$OUT/tingly.txt" <<'EOF'
-import re, sys
-steps = [int(m) for m in re.findall(r"build step (\d+)", open(sys.argv[1]).read())]
-gaps = [n for n in range(1, steps[-1] + 1) if n not in steps]
-dups = len(steps) - len(set(steps))
-print(f"tingly pane: steps 1..{steps[-1]}, missing={gaps or 'none'}, repeated={dups}")
-sys.exit(1 if gaps or dups else 0)
-EOF
-cp "$W/tunnel-server.log" "$OUT/"
+echo "continuity: $VERDICT"
+cp "$W/tunnel-server.log" "$TLOG" "$OUT/"
 awk 'BEGIN { printf "[" } { printf "%s[%.2f, \"%s\"]", (NR > 1 ? ", " : ""), $1, $2 } END { print "]" }' \
     "$OUT/markers.txt" > "$OUT/markers.json"
 echo "recorded $OUT/demo.cast (markers: $(cat "$OUT/markers.json"))"

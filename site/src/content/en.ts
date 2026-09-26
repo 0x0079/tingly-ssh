@@ -20,11 +20,11 @@ export const en: Content = {
   },
   demo: {
     title: "Watch a connection survive",
-    lead: "One laptop, one server, two terminals. Left: plain ssh. Right: the same ssh through tingly-shell. Both go through the same IP change and then 15 seconds with no network at all.",
+    lead: "One laptop, one server, the same long job in two terminals. Left: plain ssh. Right: the same ssh through tingly-shell. Both go through the same IP change, then 15 seconds with no network at all.",
     left: "plain ssh",
     right: "ssh + tingly-shell",
     chapters: { start: "Start", switch: "IP changes", outage: "Network gone", back: "Back online" },
-    note: "This is a real recording, not an animation. The laptop is a Linux network namespace whose address really changes and whose link really goes down. The remote side prints a numbered line every half second, so you can check for yourself that nothing goes missing or repeats. The recording script verifies that too, and fails if a line is missing.",
+    note: "This is a real recording, not an animation. The laptop is a Linux network namespace whose address really changes and whose link really goes down. On the left the job's progress freezes and ssh gives up. On the right it pauses, catches up and finishes. The recording script checks that all 150 progress updates reached the terminal in order and exactly once, and fails otherwise.",
     reproduce: "Reproduce it: demo/record.sh",
   },
   fit: {

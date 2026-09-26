@@ -11,11 +11,11 @@ Wi-Fi 切 5G、合上盖子、地铁进隧道，还是原来那条 `ssh` 会话�
 [![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
 [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
 
-<img src="docs/assets/demo.gif" alt="笔记本 IP 变化时普通 ssh 断开；同一条 ssh 走 tingly-shell 后扛过 IP 变化和 15 秒断网，一行不丢" width="820">
+<img src="docs/assets/demo.gif" alt="两条 ssh 上跑同一个长任务：笔记本 IP 一变，普通 ssh 的进度条停在 15% 然后超时；走 tingly-shell 的进度条扛过 IP 变化和 15 秒断网，一直跑到 100%" width="820">
 
 <sub>真录的，不是动画：一个真实的"笔记本"网络命名空间先换 IP，再彻底断网 15 秒。
-左边是普通 <code>ssh</code>，直接放弃；右边是走 tingly-shell 的 <code>ssh</code>，会话还在，远端计数器证明断网期间打印的每一行都按顺序、不重不漏地到了。
-用 <a href="demo/record.sh"><code>demo/record.sh</code></a> 可以自己复现。</sub>
+两条 ssh 上跑同一个长任务。左边是普通 <code>ssh</code>，进度条停在 15%，然后直接放弃；右边走 tingly-shell，断网时进度条停住，恢复后追上进度，一直跑完。
+录制脚本会检查 150 次进度更新是否全部按顺序、不重不漏地到达了终端。用 <a href="demo/record.sh"><code>demo/record.sh</code></a> 可以自己复现。</sub>
 
 </div>
 

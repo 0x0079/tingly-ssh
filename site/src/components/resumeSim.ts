@@ -73,6 +73,8 @@ function schedule(): Chunk[] {
 }
 
 const CHUNKS = schedule();
+/** How many chunks the story's job produces in one loop. */
+export const TOTAL = CHUNKS.length;
 
 export interface Packet {
   key: string;

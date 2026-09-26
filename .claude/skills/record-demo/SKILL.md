@@ -10,8 +10,8 @@ The demo is the project's main pitch, so it follows two rules:
 1. **Real, not mocked.** It records real `ssh` against a real sshd, through real network events
    (an address change and a link going down in a network namespace). Never hand-edit a `.cast`,
    never fake output, never speed up only one side.
-2. **Every claim is checked.** `demo/record.sh` fails unless the tingly-shell pane shows every
-   heartbeat line exactly once. If a caption, README or website sentence claims something, the
+2. **Every claim is checked.** `demo/record.sh` fails unless every progress update of the remote job
+   reached the tingly-shell terminal in order and exactly once, and only then shows the closing caption. If a caption, README or website sentence claims something, the
    recording must show it.
 
 ## Files
@@ -21,7 +21,7 @@ The demo is the project's main pitch, so it follows two rules:
 | `demo/record.sh` | Builds the binary, sets up the namespace, sshd and tunnel server, drives tmux, records, and verifies continuity. Needs root. |
 | `demo/cast.py` | A dependency-free asciicast v2 recorder (a pty plus timestamps). Works headless. |
 | `demo/snapshot.py` | Prints the screen at chosen seconds of a cast (`pip install pyte`), for reviewing without a browser. |
-| `demo/out/` | Output, gitignored: `demo.cast`, `markers.json`, `tingly.txt` / `plain-ssh.txt` (full scrollback), logs. |
+| `demo/out/` | Output, gitignored: `demo.cast`, `markers.json`, `stdout-devbox-tingly.log` (the exact bytes ssh wrote, which the check reads), `tingly.txt` / `plain-ssh.txt` (pane scrollback), logs. |
 | `docs/assets/demo.gif` | The README GIF, rendered from the cast. |
 | `site/public/demo.cast` | The website player's copy of the cast. |
 | `site/src/assets/demo-markers.json` | Chapter times (`switch`, `outage`, `back`) for the website buttons. |
@@ -31,12 +31,14 @@ The demo is the project's main pitch, so it follows two rules:
 1. **Environment**: a disposable Linux VM or container, as root, with `iproute2`, `openssh-server`,
    `openssh-client`, `tmux`, `bc`, `python3` and Go. In a fresh container:
    `apt-get install -y openssh-server openssh-client iproute2 tmux bc`.
-2. **Record**: `sudo ./demo/record.sh` (about 60 s). Knobs: `OUTAGE=15`, `RESUME_WAIT=22`, `COLS=112 ROWS=26`.
-   It must end with `tingly pane: ... missing=none, repeated=0`. If it doesn't, that is a product bug
+2. **Record**: `sudo ./demo/record.sh` (about 60 s). Knobs: `OUTAGE=15`, `JOB_STEPS=150`
+   (0.3 s each, so the job runs 45 s and has to outlive the outage), `RESUME_WAIT=40` (the longest wait for
+   the job to finish), `COLS=112 ROWS=9`. It must end with
+   `continuity: 150/150 progress updates, in order, none repeated`. If it doesn't, that is a product bug
    to investigate, not a recording to retake until it passes.
-3. **Review** the story as text: `demo/snapshot.py demo/out/demo.cast 12 25 40`. Check that the left pane
-   dies after the IP change (`Timeout, server ... not responding`), that the right pane freezes during
-   the outage and then catches up, and that no log noise leaks into the panes.
+3. **Review** the story as text: `demo/snapshot.py demo/out/demo.cast 12 25 40`. Check that the left bar
+   freezes and ssh dies after the IP change (`Timeout, server ... not responding`), that the right bar
+   pauses during the outage, jumps forward to where the job really is, and reaches `✓ done`, and that no log noise leaks into the panes.
 4. **Render the GIF** with [agg](https://github.com/asciinema/agg) (a static binary from its releases page):
    `agg --font-size 15 --theme github-dark demo/out/demo.cast docs/assets/demo.gif`. Keep it under about 1 MB.
    Look at a few frames (for example extract them with Pillow) before you commit.
@@ -63,8 +65,12 @@ The demo is the project's main pitch, so it follows two rules:
   the ssh config it shows.
 - **Reconnect backoff grows during an outage** (capped at 15 s ±20% jitter, `internal/bridge/client.go`), so recovery after
   the network returns can lag by that much. Keep `RESUME_WAIT` long enough to show the catch-up.
-- tmux redraws in bursts. When checking continuity, don't grep the raw cast; use the scrollback
-  `record.sh` captures (`tingly.txt`).
+- tmux redraws in bursts and a progress bar overwrites itself, so neither the cast nor the pane can
+  prove continuity. The laptop's `ssh` wrapper tees stdout to `stdout-<host>.log`, and the check reads that.
+- **Never edit `record.sh` while it runs.** bash reads scripts incrementally, and a mid-run edit fails
+  with nonsense such as `tdemo1: command not found`.
+- Why a progress bar and not numbered lines: viewers read "frozen at 15%, gave up" versus "paused,
+  caught up, finished" at a glance, while numbered lines only prove something if you count them.
 
 ## Adding a scenario
 

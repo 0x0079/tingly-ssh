@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import type { Content } from "../content/types";
 import { useLoopClock } from "../useLoopClock";
-import { frameAt, LOOP, PHASE_STARTS, type Route } from "./resumeSim";
+import { frameAt, LOOP, PHASE_STARTS, TOTAL, type Route } from "./resumeSim";
 
 // Geometry of the SVG, in viewBox units.
 const W = 900;
@@ -26,7 +26,8 @@ function pointOn(route: Route, progress: number) {
 }
 
 const pathD = (r: Route) => `M ${FROM.x} ${FROM.y} Q ${CONTROL[r].x} ${CONTROL[r].y} ${TO.x} ${TO.y}`;
-const pad = (n: number) => String(n + 1).padStart(3, "0");
+const pad = (n: number) => String(n).padStart(2, "0");
+const BAR = { x: LAPTOP.x + 22, y: LAPTOP.y + 84, w: LAPTOP.w - 44, h: 14 };
 
 interface Props {
   t: Content["how"];
@@ -37,7 +38,7 @@ export function ResumeDiagram({ t }: Props) {
   const clock = useLoopClock(LOOP, root);
   const f = frameAt(clock.t);
   const phase = t.phases[f.phase];
-  const lines = Array.from({ length: Math.min(f.delivered, 6) }, (_, i) => f.delivered - Math.min(f.delivered, 6) + i);
+  const done = f.delivered / TOTAL;
 
   return (
     <div className="diagram" ref={root}>
@@ -72,11 +73,20 @@ export function ResumeDiagram({ t }: Props) {
               {t.laptop}
             </text>
             <rect x={LAPTOP.x + 12} y={LAPTOP.y + 38} width={LAPTOP.w - 24} height={112} rx={6} className="term" />
-            {lines.map((n, i) => (
-              <text key={n} x={LAPTOP.x + 22} y={LAPTOP.y + 58 + i * 17} className="term__line">
-                step {pad(n)} <tspan className="term__ok">ok</tspan>
+            {/* The same long job as the recorded demo, as seen on the laptop. */}
+            <text x={BAR.x} y={LAPTOP.y + 64} className="term__line">
+              $ ssh devbox reindex
+            </text>
+            <rect {...BAR} rx={3} className="bar__track" />
+            <rect x={BAR.x} y={BAR.y} width={BAR.w * done} height={BAR.h} rx={3} className="bar__fill" />
+            <text x={BAR.x} y={BAR.y + 36} className="term__line">
+              {Math.round(done * 100)}%{"  "}shard {pad(f.delivered)}/{TOTAL}
+            </text>
+            {f.delivered === TOTAL && (
+              <text x={BAR.x} y={BAR.y + 56} className="term__line">
+                <tspan className="term__ok">✓ done</tspan>
               </text>
-            ))}
+            )}
             <text x={LAPTOP.x + 16} y={LAPTOP.y + LAPTOP.h - 10} className="box__meta">
               {t.delivered}: {f.delivered}
             </text>

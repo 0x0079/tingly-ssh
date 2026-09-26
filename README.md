@@ -11,11 +11,11 @@ English | [简体中文](README.zh-CN.md) · [Website](https://0x0079.github.io/
 [![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
 [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
 
-<img src="docs/assets/demo.gif" alt="Plain ssh dies when the laptop's IP changes; the same ssh through tingly-shell survives the IP change and a 15-second outage without losing a line" width="820">
+<img src="docs/assets/demo.gif" alt="A long job's progress bar over two ssh sessions: plain ssh freezes at 15% and times out when the laptop's IP changes; through tingly-shell the bar survives the IP change and a 15-second outage and runs to 100%" width="820">
 
-<sub>Recorded, not mocked up: a real laptop network namespace goes through an IP change, then 15 s with no network.
-Left, plain `ssh` gives up. Right, `ssh` through tingly-shell keeps the session, and the counter shows that every
-line printed during the outage arrives, in order, exactly once. Reproduce it with <a href="demo/record.sh"><code>demo/record.sh</code></a>.</sub>
+<sub>Recorded, not mocked up: the same long job over two ssh sessions, while a real laptop network namespace goes through an IP change and then 15 s with no network.
+Left, plain <code>ssh</code> freezes at 15% and gives up. Right, through tingly-shell, the bar pauses during the outage, catches up, and finishes.
+The recording script checks that all 150 progress updates reached the terminal in order and exactly once. Reproduce it with <a href="demo/record.sh"><code>demo/record.sh</code></a>.</sub>
 
 </div>
 
