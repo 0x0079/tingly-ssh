@@ -21,7 +21,7 @@ export function Nav({ t, lang, setLang }: Props) {
       <div className="container nav__inner">
         <a href="#top" className="nav__brand">
           <Logo />
-          <span>tingly-shell</span>
+          <span>tingly-ssh</span>
         </a>
         <nav className="nav__links" aria-label="Sections">
           {links.map(([href, label]) => (

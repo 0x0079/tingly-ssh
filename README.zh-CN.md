@@ -1,20 +1,20 @@
 <div align="center">
 
-# tingly-shell
+# tingly-ssh
 
 **你的 SSH，不会再断了。**
 Wi-Fi 切 5G、合上盖子、地铁进隧道，还是原来那条 `ssh` 会话，接着往下跑，一行输出都不丢。
 
-[English](README.md) | 简体中文 · [项目主页](https://0x0079.github.io/tingly-shell/)
+[English](README.md) | 简体中文 · [项目主页](https://0x0079.github.io/tingly-ssh/)
 
-[![CI](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
+[![CI](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/0x0079/tingly-ssh)](https://github.com/0x0079/tingly-ssh/releases)
 [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
 
-<img src="docs/assets/demo.gif" alt="两条 ssh 上跑同一个长任务：笔记本 IP 一变，普通 ssh 的进度条停在 15% 然后超时；走 tingly-shell 的进度条扛过 IP 变化和 15 秒断网，一直跑到 100%" width="820">
+<img src="docs/assets/demo.gif" alt="两条 ssh 上跑同一个长任务：笔记本 IP 一变，普通 ssh 的进度条停在 15% 然后超时；走 tingly-ssh 的进度条扛过 IP 变化和 15 秒断网，一直跑到 100%" width="820">
 
 <sub>真录的，不是动画：一个真实的"笔记本"网络命名空间先换 IP，再彻底断网 15 秒。
-两条 ssh 上跑同一个长任务。左边是普通 <code>ssh</code>，进度条停在 15%，然后直接放弃；右边走 tingly-shell，断网时进度条停住，恢复后追上进度，一直跑完。
+两条 ssh 上跑同一个长任务。左边是普通 <code>ssh</code>，进度条停在 15%，然后直接放弃；右边走 tingly-ssh，断网时进度条停住，恢复后追上进度，一直跑完。
 录制脚本会检查 150 次进度更新是否全部按顺序、不重不漏地到达了终端。用 <a href="demo/record.sh"><code>demo/record.sh</code></a> 可以自己复现。</sub>
 
 </div>
@@ -44,7 +44,7 @@ Wi-Fi 切 5G、合上盖子、地铁进隧道，还是原来那条 `ssh` 会话�
 
 ## 和其他方案比
 
-|  | **tingly-shell** | mosh | Eternal Terminal | autossh | 只用 tmux / screen |
+|  | **tingly-ssh** | mosh | Eternal Terminal | autossh | 只用 tmux / screen |
 | --- | --- | --- | --- | --- | --- |
 | IP 变了还能用 | ✅ | ✅ | ✅ | ❌ 重连成新会话 | ❌ 需要手动 reattach |
 | 短时断网能恢复 | ✅ 默认 60 秒，可调 | ✅ | ✅ | ❌ 新会话 | ❌ 需要手动 reattach |
@@ -56,7 +56,7 @@ Wi-Fi 切 5G、合上盖子、地铁进隧道，还是原来那条 `ssh` 会话�
 | 服务端需要 | 一个进程，一个 UDP 端口 | `mosh-server`，UDP 60000–61000 | `etserver` 守护进程 | 无 | 无 |
 | 慢链路上的输入预测 | ❌ | ✅ | ❌ | ❌ | ❌ |
 
-tingly-shell 和 tmux 分工不同，配合使用最好：隧道负责让**连接**扛过网络变化；万一连接真的断了
+tingly-ssh 和 tmux 分工不同，配合使用最好：隧道负责让**连接**扛过网络变化；万一连接真的断了
 （比如笔记本关机一小时），由 tmux 保住**正在做的事**。
 
 ## 快速上手
@@ -65,17 +65,17 @@ tingly-shell 和 tmux 分工不同，配合使用最好：隧道负责让**连�
 
 ### 1. 两端都装上
 
-每个 [release](https://github.com/0x0079/tingly-shell/releases) 都附带 linux/darwin × amd64/arm64 的预编译包：
+每个 [release](https://github.com/0x0079/tingly-ssh/releases) 都附带 linux/darwin × amd64/arm64 的预编译包：
 
 ```bash
 # 把 VERSION、OS（linux|darwin）、ARCH（amd64|arm64）换成实际值
-curl -LO https://github.com/0x0079/tingly-shell/releases/download/vVERSION/tingly-shell_VERSION_OS_ARCH.tar.gz
-tar xzf tingly-shell_VERSION_OS_ARCH.tar.gz
-sudo install -m 755 tingly-shell /usr/local/bin/
-tingly-shell version
+curl -LO https://github.com/0x0079/tingly-ssh/releases/download/vVERSION/tingly-ssh_VERSION_OS_ARCH.tar.gz
+tar xzf tingly-ssh_VERSION_OS_ARCH.tar.gz
+sudo install -m 755 tingly-ssh /usr/local/bin/
+tingly-ssh version
 ```
 
-也可以用 Go 1.26+：`go install github.com/0x0079/tingly-shell/cmd/tingly-shell@latest`。
+也可以用 Go 1.26+：`go install github.com/0x0079/tingly-ssh/cmd/tingly-ssh@latest`。
 
 ### 2. 服务端：和 sshd 放在一起
 
@@ -85,7 +85,7 @@ tingly-shell version
 sudo mkdir -p /etc/tingly
 sudo sh -c 'cat ~alice/.ssh/authorized_keys >> /etc/tingly/authorized_keys'
 
-tingly-shell server --listen :7443 --target 127.0.0.1:22 \
+tingly-ssh server --listen :7443 --target 127.0.0.1:22 \
     --authorized-keys /etc/tingly/authorized_keys
 # ... msg="server listening" addr=[::]:7443 pin=sha256:XUYr8w...   <- 记下这个 pin
 ```
@@ -100,7 +100,7 @@ tingly-shell server --listen :7443 --target 127.0.0.1:22 \
 Host myserver-roam
     HostName 203.0.113.10
     User alice
-    ProxyCommand tingly-shell proxy --server %h:7443
+    ProxyCommand tingly-ssh proxy --server %h:7443
 ```
 
 确认钥匙在 agent 里（`ssh-add -l`），然后连接：
@@ -130,7 +130,7 @@ ssh myserver-roam 'while true; do date; sleep 1; done'
 ```
                你的笔记本                                         你的服务器
 ┌──────────────────────────────────┐                ┌──────────────────────────────────┐
-│ ssh ─stdio─▶ tingly-shell proxy  │═══ QUIC/UDP ══▶│ tingly-shell server ─TCP─▶ sshd  │
+│ ssh ─stdio─▶ tingly-ssh proxy  │═══ QUIC/UDP ══▶│ tingly-ssh server ─TCP─▶ sshd  │
 └──────────────────────────────────┘                └──────────────────────────────────┘
                    └──────────────── 可恢复会话层 ────────────────┘
 ```
@@ -145,7 +145,7 @@ ssh myserver-roam 'while true; do date; sleep 1; done'
 
 ## 安全性，一段话说清
 
-tingly-shell 是套在 SSH 外面的**额外**一层，不是替代：sshd 照样认证你，SSH 照样端到端加密一切。
+tingly-ssh 是套在 SSH 外面的**额外**一层，不是替代：sshd 照样认证你，SSH 照样端到端加密一切。
 想通过隧道，客户端必须证明自己持有服务端白名单里的某把钥匙。这个证明是一个 SSH 签名，绑定在当前这一条 TLS 连接上，
 既不能被重放，也不能被挪用成 SSH 登录签名。线上不传任何秘密，所以隧道服务端的公钥可以像 `known_hosts` 那样首次信任。
 撤销权限就是删掉一行，再发一个 `SIGHUP`。
@@ -157,9 +157,9 @@ tingly-shell 是套在 SSH 外面的**额外**一层，不是替代：sshd 照�
 <summary><b>每设备 token</b>：CI、没有 ssh-agent 的机器</summary>
 
 ```bash
-tingly-shell keygen --label ci-runner-1 > token && chmod 600 token   # 服务端记录行打印在 stderr
-tingly-shell server --listen :7443 --target 127.0.0.1:22 --credentials /etc/tingly/credentials
-ssh -o ProxyCommand="tingly-shell proxy --server %h:7443 --token-file token --pin sha256:..." user@host
+tingly-ssh keygen --label ci-runner-1 > token && chmod 600 token   # 服务端记录行打印在 stderr
+tingly-ssh server --listen :7443 --target 127.0.0.1:22 --credentials /etc/tingly/credentials
+ssh -o ProxyCommand="tingly-ssh proxy --server %h:7443 --token-file token --pin sha256:..." user@host
 ```
 
 服务端只存哈希。每台设备一份 token，撤销某一台就是删掉它那一行再发 `SIGHUP`。两种认证方式可以在同一台服务端上同时开启。
@@ -177,7 +177,7 @@ ssh -o ProxyCommand="tingly-shell proxy --server %h:7443 --token-file token --pi
 <summary><b>本地端口</b>代替 ProxyCommand</summary>
 
 ```bash
-tingly-shell client --server myserver:7443 --listen 127.0.0.1:2222
+tingly-ssh client --server myserver:7443 --listen 127.0.0.1:2222
 ssh -p 2222 alice@127.0.0.1
 ```
 </details>

@@ -1,6 +1,6 @@
 ---
 name: record-demo
-description: Re-record and publish tingly-shell's promotional demo (the side-by-side "plain ssh vs ssh + tingly-shell" recording) and keep the README GIF, the website player and its chapter markers in sync. Use when the demo is stale (CLI output, flags or reconnect behaviour changed), when asked to make or refresh promo material, a GIF, a screencast or the website demo, or when adding a new demo scenario.
+description: Re-record and publish tingly-ssh's promotional demo (the side-by-side "plain ssh vs ssh + tingly-ssh" recording) and keep the README GIF, the website player and its chapter markers in sync. Use when the demo is stale (CLI output, flags or reconnect behaviour changed), when asked to make or refresh promo material, a GIF, a screencast or the website demo, or when adding a new demo scenario.
 ---
 
 # Recording and publishing the demo
@@ -11,7 +11,7 @@ The demo is the project's main pitch, so it follows two rules:
    (an address change and a link going down in a network namespace). Never hand-edit a `.cast`,
    never fake output, never speed up only one side.
 2. **Every claim is checked.** `demo/record.sh` fails unless every progress update of the remote job
-   reached the tingly-shell terminal in order and exactly once, and only then shows the closing caption. If a caption, README or website sentence claims something, the
+   reached the tingly-ssh terminal in order and exactly once, and only then shows the closing caption. If a caption, README or website sentence claims something, the
    recording must show it.
 
 ## Files

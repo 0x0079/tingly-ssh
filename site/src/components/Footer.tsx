@@ -8,7 +8,7 @@ export function Footer({ t }: { t: Content["footer"] }) {
       <div className="container footer__inner">
         <div className="footer__brand">
           <Logo size={18} />
-          <span>tingly-shell</span>
+          <span>tingly-ssh</span>
         </div>
         <p className="footer__made">{t.madeWith}</p>
         <nav className="footer__links">

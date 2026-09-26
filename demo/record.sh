@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Records the README / website demo: plain ssh and ssh through tingly-shell,
+# Records the README / website demo: plain ssh and ssh through tingly-ssh,
 # side by side, through the same two real network events:
 #
 #   1. the laptop's IP address changes (Wi-Fi -> cellular)
 #   2. the laptop loses the network entirely for OUTAGE seconds
 #
-# Nothing is simulated inside tingly-shell or ssh. The "laptop" is a network
+# Nothing is simulated inside tingly-ssh or ssh. The "laptop" is a network
 # namespace joined to the host by a veth pair; the events are an address
 # change and the link going down, the same things the kernel sees when a
 # radio switches or drops. The remote side runs a long job with a progress
@@ -57,8 +57,8 @@ ip netns exec "$NS" ip link set tdemo1 up
 ip netns exec "$NS" ip link set lo up
 
 # --- server side: a private sshd and the tunnel server ----------------------
-(cd "$REPO_ROOT" && go build -o "$W/bin/tingly-shell" ./cmd/tingly-shell)
-BIN=$W/bin/tingly-shell
+(cd "$REPO_ROOT" && go build -o "$W/bin/tingly-ssh" ./cmd/tingly-ssh)
+BIN=$W/bin/tingly-ssh
 
 ssh-keygen -q -t ed25519 -N '' -f "$W/host_key" </dev/null
 ssh-keygen -q -t ed25519 -N '' -f "$W/home/.ssh/id_ed25519" -C laptop </dev/null
@@ -121,7 +121,7 @@ Host devbox
 Host devbox-tingly
     HostName 127.0.0.1
     Port 2222
-    ProxyCommand tingly-shell proxy --server 10.77.0.1:7443 --target 127.0.0.1:2222 --identity $W/home/.ssh/id_ed25519.pub --log-level error
+    ProxyCommand tingly-ssh proxy --server 10.77.0.1:7443 --target 127.0.0.1:2222 --identity $W/home/.ssh/id_ed25519.pub --log-level error
 
 Host *
     User root
@@ -169,7 +169,7 @@ T set -g pane-border-format " #{pane_title} "
 T set -g pane-active-border-style "fg=colour240"
 T set -g pane-border-style "fg=colour240"
 T select-pane -t demo:0.0 -T "plain ssh"
-T select-pane -t demo:0.1 -T "ssh + tingly-shell"
+T select-pane -t demo:0.1 -T "ssh + tingly-ssh"
 T set -g history-limit 10000
 caption() { T set -g status-left " #[bold]$1"; }
 # mark KEY: the recording time of a story beat, for the website's chapter
@@ -182,7 +182,7 @@ type_in() { # pane text: type like a person
     for ((i = 0; i < ${#s}; i++)); do T send-keys -t "demo:0.$p" -l "${s:i:1}"; sleep 0.04; done
 }
 
-caption "#[fg=colour75]Same laptop, same server, same long job. Left: plain ssh.  Right: ssh through tingly-shell."
+caption "#[fg=colour75]Same laptop, same server, same long job. Left: plain ssh.  Right: ssh through tingly-ssh."
 python3 "$HERE/cast.py" "$OUT/demo.cast" "$COLS" "$ROWS" -- tmux -L "$SOCK" attach -t demo &
 REC=$!
 REC_START=$(date +%s.%N)

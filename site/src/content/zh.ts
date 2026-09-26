@@ -3,7 +3,7 @@ import { code } from "./code";
 
 export const zh: Content = {
   meta: {
-    title: "tingly-shell：换网不断线的 SSH",
+    title: "tingly-ssh：换网不断线的 SSH",
     description: "Wi-Fi 切 5G、合上盖子、地铁进隧道，还是原来那条 ssh 会话，输出一行不丢。不改 OpenSSH，不改 sshd。",
   },
   nav: { demo: "演示", how: "原理", compare: "对比", start: "快速上手", faq: "常见问题", github: "GitHub" },
@@ -19,9 +19,9 @@ export const zh: Content = {
   },
   demo: {
     title: "看一条连接怎么活下来",
-    lead: "同一台笔记本，同一台服务器，两个终端跑同一个长任务。左边是普通 ssh，右边是同一条 ssh 走 tingly-shell。两边经历的是同一次 IP 变化，以及随后 15 秒的彻底断网。",
+    lead: "同一台笔记本，同一台服务器，两个终端跑同一个长任务。左边是普通 ssh，右边是同一条 ssh 走 tingly-ssh。两边经历的是同一次 IP 变化，以及随后 15 秒的彻底断网。",
     left: "普通 ssh",
-    right: "ssh + tingly-shell",
+    right: "ssh + tingly-ssh",
     chapters: { start: "开始", switch: "IP 变化", outage: "网络消失", back: "恢复联网" },
     note: "这是真实录制，不是动画。\"笔记本\"是一个 Linux 网络命名空间，它的地址真的变了，链路也真的断了。左边的任务进度卡住，ssh 随后放弃；右边的进度停一下，追上来，然后跑完。录制脚本会检查 150 次进度更新是否全部按顺序、不重不漏地到达终端，否则录制失败。",
     reproduce: "自己复现：demo/record.sh",
@@ -69,7 +69,7 @@ export const zh: Content = {
   compare: {
     title: "和其他方案比",
     lead: "如实列出取舍。tmux 是搭档，不是对手：隧道负责让连接活着，万一连接真断了，由 tmux 保住正在做的事。",
-    tools: ["tingly-shell", "mosh", "Eternal Terminal", "autossh", "只用 tmux"],
+    tools: ["tingly-ssh", "mosh", "Eternal Terminal", "autossh", "只用 tmux"],
     rows: [
       { label: "IP 变了还能用", cells: [{ v: "yes" }, { v: "yes" }, { v: "yes" }, { v: "no", note: "新会话" }, { v: "no", note: "手动 reattach" }] },
       { label: "短时断网能恢复", cells: [{ v: "yes", note: "默认 60 秒" }, { v: "yes" }, { v: "yes" }, { v: "no", note: "新会话" }, { v: "no", note: "手动 reattach" }] },

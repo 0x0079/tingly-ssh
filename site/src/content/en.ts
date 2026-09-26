@@ -3,7 +3,7 @@ import { code } from "./code";
 
 export const en: Content = {
   meta: {
-    title: "tingly-shell: SSH that survives network changes",
+    title: "tingly-ssh: SSH that survives network changes",
     description:
       "Switch Wi-Fi to 5G, close the lid, ride through a tunnel: the same ssh session carries on and no output is lost. No changes to OpenSSH or sshd.",
   },
@@ -20,9 +20,9 @@ export const en: Content = {
   },
   demo: {
     title: "Watch a connection survive",
-    lead: "One laptop, one server, the same long job in two terminals. Left: plain ssh. Right: the same ssh through tingly-shell. Both go through the same IP change, then 15 seconds with no network at all.",
+    lead: "One laptop, one server, the same long job in two terminals. Left: plain ssh. Right: the same ssh through tingly-ssh. Both go through the same IP change, then 15 seconds with no network at all.",
     left: "plain ssh",
-    right: "ssh + tingly-shell",
+    right: "ssh + tingly-ssh",
     chapters: { start: "Start", switch: "IP changes", outage: "Network gone", back: "Back online" },
     note: "This is a real recording, not an animation. The laptop is a Linux network namespace whose address really changes and whose link really goes down. On the left the job's progress freezes and ssh gives up. On the right it pauses, catches up and finishes. The recording script checks that all 150 progress updates reached the terminal in order and exactly once, and fails otherwise.",
     reproduce: "Reproduce it: demo/record.sh",
@@ -70,7 +70,7 @@ export const en: Content = {
   compare: {
     title: "How it compares",
     lead: "Honest trade-offs. tmux is a companion, not a competitor: the tunnel keeps the connection alive, and tmux keeps the work alive if the connection does die.",
-    tools: ["tingly-shell", "mosh", "Eternal Terminal", "autossh", "tmux alone"],
+    tools: ["tingly-ssh", "mosh", "Eternal Terminal", "autossh", "tmux alone"],
     rows: [
       { label: "Survives an IP change", cells: [{ v: "yes" }, { v: "yes" }, { v: "yes" }, { v: "no", note: "new session" }, { v: "no", note: "reattach" }] },
       { label: "Survives a short outage", cells: [{ v: "yes", note: "60 s default" }, { v: "yes" }, { v: "yes" }, { v: "no", note: "new session" }, { v: "no", note: "reattach" }] },

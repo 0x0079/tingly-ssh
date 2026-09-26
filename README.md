@@ -1,20 +1,20 @@
 <div align="center">
 
-# tingly-shell
+# tingly-ssh
 
 **Your SSH session doesn't drop anymore.**
 Switch from Wi-Fi to 5G, close the lid, ride through a tunnel. The same `ssh` session picks up where it left off, and no output is lost.
 
-English | [简体中文](README.zh-CN.md) · [Website](https://0x0079.github.io/tingly-shell/)
+English | [简体中文](README.zh-CN.md) · [Website](https://0x0079.github.io/tingly-ssh/)
 
-[![CI](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
+[![CI](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/0x0079/tingly-ssh)](https://github.com/0x0079/tingly-ssh/releases)
 [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
 
-<img src="docs/assets/demo.gif" alt="A long job's progress bar over two ssh sessions: plain ssh freezes at 15% and times out when the laptop's IP changes; through tingly-shell the bar survives the IP change and a 15-second outage and runs to 100%" width="820">
+<img src="docs/assets/demo.gif" alt="A long job's progress bar over two ssh sessions: plain ssh freezes at 15% and times out when the laptop's IP changes; through tingly-ssh the bar survives the IP change and a 15-second outage and runs to 100%" width="820">
 
 <sub>Recorded, not mocked up: the same long job over two ssh sessions, while a real laptop network namespace goes through an IP change and then 15 s with no network.
-Left, plain <code>ssh</code> freezes at 15% and gives up. Right, through tingly-shell, the bar pauses during the outage, catches up, and finishes.
+Left, plain <code>ssh</code> freezes at 15% and gives up. Right, through tingly-ssh, the bar pauses during the outage, catches up, and finishes.
 The recording script checks that all 150 progress updates reached the terminal in order and exactly once. Reproduce it with <a href="demo/record.sh"><code>demo/record.sh</code></a>.</sub>
 
 </div>
@@ -45,7 +45,7 @@ resumable session layer, so a changed address or a short outage is something it 
 
 ## How it compares
 
-|  | **tingly-shell** | mosh | Eternal Terminal | autossh | tmux / screen alone |
+|  | **tingly-ssh** | mosh | Eternal Terminal | autossh | tmux / screen alone |
 | --- | --- | --- | --- | --- | --- |
 | Survives an IP change | ✅ | ✅ | ✅ | ❌ reconnects as a new session | ❌ you reattach by hand |
 | Survives a short outage | ✅ default 60 s, configurable | ✅ | ✅ | ❌ new session | ❌ you reattach by hand |
@@ -57,7 +57,7 @@ resumable session layer, so a changed address or a short outage is something it 
 | Server side | one daemon, one UDP port | `mosh-server`, UDP 60000–61000 | `etserver` daemon | nothing | nothing |
 | Typing prediction on slow links | ❌ | ✅ | ❌ | ❌ | ❌ |
 
-tingly-shell and tmux do different jobs and work well together: the tunnel keeps the **connection** alive
+tingly-ssh and tmux do different jobs and work well together: the tunnel keeps the **connection** alive
 across network changes, tmux keeps the **work** alive if the connection does die (for example when the laptop is off for an hour).
 
 ## Quick start
@@ -66,17 +66,17 @@ About five minutes. You need a Linux or macOS client, a Linux or macOS server ru
 
 ### 1. Install on both machines
 
-Prebuilt binaries for linux/darwin × amd64/arm64 are attached to every [release](https://github.com/0x0079/tingly-shell/releases):
+Prebuilt binaries for linux/darwin × amd64/arm64 are attached to every [release](https://github.com/0x0079/tingly-ssh/releases):
 
 ```bash
 # Replace VERSION, OS (linux|darwin) and ARCH (amd64|arm64)
-curl -LO https://github.com/0x0079/tingly-shell/releases/download/vVERSION/tingly-shell_VERSION_OS_ARCH.tar.gz
-tar xzf tingly-shell_VERSION_OS_ARCH.tar.gz
-sudo install -m 755 tingly-shell /usr/local/bin/
-tingly-shell version
+curl -LO https://github.com/0x0079/tingly-ssh/releases/download/vVERSION/tingly-ssh_VERSION_OS_ARCH.tar.gz
+tar xzf tingly-ssh_VERSION_OS_ARCH.tar.gz
+sudo install -m 755 tingly-ssh /usr/local/bin/
+tingly-ssh version
 ```
 
-Or with Go 1.26+: `go install github.com/0x0079/tingly-shell/cmd/tingly-shell@latest`.
+Or with Go 1.26+: `go install github.com/0x0079/tingly-ssh/cmd/tingly-ssh@latest`.
 
 ### 2. Server: run it next to sshd
 
@@ -86,7 +86,7 @@ The tunnel reuses the SSH keys you already have. Its allow list is a plain `auth
 sudo mkdir -p /etc/tingly
 sudo sh -c 'cat ~alice/.ssh/authorized_keys >> /etc/tingly/authorized_keys'
 
-tingly-shell server --listen :7443 --target 127.0.0.1:22 \
+tingly-ssh server --listen :7443 --target 127.0.0.1:22 \
     --authorized-keys /etc/tingly/authorized_keys
 # ... msg="server listening" addr=[::]:7443 pin=sha256:XUYr8w...   <- note the pin
 ```
@@ -101,7 +101,7 @@ Add a new alias next to your existing one, so you can compare the two and switch
 Host myserver-roam
     HostName 203.0.113.10
     User alice
-    ProxyCommand tingly-shell proxy --server %h:7443
+    ProxyCommand tingly-ssh proxy --server %h:7443
 ```
 
 Make sure your key is in the agent (`ssh-add -l`), then connect:
@@ -132,7 +132,7 @@ The full walkthrough, including teams, SSH CAs, hardware keys and a troubleshoot
 ```
              your laptop                                         your server
 ┌──────────────────────────────────┐                ┌──────────────────────────────────┐
-│ ssh ─stdio─▶ tingly-shell proxy  │═══ QUIC/UDP ══▶│ tingly-shell server ─TCP─▶ sshd  │
+│ ssh ─stdio─▶ tingly-ssh proxy  │═══ QUIC/UDP ══▶│ tingly-ssh server ─TCP─▶ sshd  │
 └──────────────────────────────────┘                └──────────────────────────────────┘
                    └──────────── resumable session layer ────────────┘
 ```
@@ -148,7 +148,7 @@ Details: [architecture](docs/01-architecture.md), [resumption semantics](docs/03
 
 ## Security in one paragraph
 
-tingly-shell is an **extra** layer around SSH, not a replacement: sshd still authenticates you and SSH still
+tingly-ssh is an **extra** layer around SSH, not a replacement: sshd still authenticates you and SSH still
 encrypts everything end to end. To get through the tunnel at all, a client proves it holds a key that is in
 the server's allow list. The proof is an SSH signature bound to that specific TLS connection, so it can't be
 replayed and can't be reused as an SSH login. Nothing secret goes on the wire, which is why the tunnel's server
@@ -162,9 +162,9 @@ the risk register, and a hardening checklist.
 <summary><b>Per-device tokens</b> for CI and machines without an ssh-agent</summary>
 
 ```bash
-tingly-shell keygen --label ci-runner-1 > token && chmod 600 token   # record line goes to stderr
-tingly-shell server --listen :7443 --target 127.0.0.1:22 --credentials /etc/tingly/credentials
-ssh -o ProxyCommand="tingly-shell proxy --server %h:7443 --token-file token --pin sha256:..." user@host
+tingly-ssh keygen --label ci-runner-1 > token && chmod 600 token   # record line goes to stderr
+tingly-ssh server --listen :7443 --target 127.0.0.1:22 --credentials /etc/tingly/credentials
+ssh -o ProxyCommand="tingly-ssh proxy --server %h:7443 --token-file token --pin sha256:..." user@host
 ```
 
 The server stores only a hash. Each device gets its own token, so revoking one is deleting its line and sending `SIGHUP`.
@@ -182,7 +182,7 @@ laptop changes networks, so the jump host itself needs no changes. See [jump hos
 <summary><b>A local port</b> instead of ProxyCommand</summary>
 
 ```bash
-tingly-shell client --server myserver:7443 --listen 127.0.0.1:2222
+tingly-ssh client --server myserver:7443 --listen 127.0.0.1:2222
 ssh -p 2222 alice@127.0.0.1
 ```
 </details>
