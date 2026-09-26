@@ -1,0 +1,125 @@
+import type { Content } from "./types";
+import { code } from "./code";
+
+export const en: Content = {
+  meta: {
+    title: "tingly-shell: SSH that survives network changes",
+    description:
+      "Switch Wi-Fi to 5G, close the lid, ride through a tunnel: the same ssh session carries on and no output is lost. No changes to OpenSSH or sshd.",
+  },
+  nav: { demo: "Demo", how: "How it works", compare: "Compare", start: "Quick start", faq: "FAQ", github: "GitHub" },
+  hero: {
+    eyebrow: "SSH over QUIC with session resumption",
+    title: "Your SSH session",
+    titleAccent: "doesn't drop anymore.",
+    lead: "Switch from Wi-Fi to 5G, close the lid, ride through a tunnel. The same ssh session picks up where it left off, and every byte of output arrives. You keep using ssh, scp, rsync, port forwarding and tmux exactly as today.",
+    ctaPrimary: "Get started",
+    ctaSecondary: "Watch the demo",
+    install: "One binary for each end · Linux & macOS · MPL-2.0",
+    facts: ["OpenSSH & sshd unchanged", "Reuses your SSH keys", "Every byte, in order, exactly once"],
+  },
+  demo: {
+    title: "Watch a connection survive",
+    lead: "One laptop, one server, two terminals. Left: plain ssh. Right: the same ssh through tingly-shell. Both go through the same IP change and then 15 seconds with no network at all.",
+    left: "plain ssh",
+    right: "ssh + tingly-shell",
+    chapters: { start: "Start", switch: "IP changes", outage: "Network gone", back: "Back online" },
+    note: "This is a real recording, not an animation. The laptop is a Linux network namespace whose address really changes and whose link really goes down. The remote side prints a numbered line every half second, so you can check for yourself that nothing goes missing or repeats. The recording script verifies that too, and fails if a line is missing.",
+    reproduce: "Reproduce it: demo/record.sh",
+  },
+  fit: {
+    title: "Is it for you?",
+    yesTitle: "Yes, if you",
+    yes: [
+      "work from a laptop that moves between home, office, café and phone hotspot",
+      "start long builds, migrations or training jobs over SSH and hate babysitting the connection",
+      "keep ssh -L tunnels open to a database, Jupyter or a dashboard, and they die with the Wi-Fi",
+      "ride trains or planes, or work on mobile networks that vanish for 10 to 60 seconds",
+      "want all of this without a VPN, a hosted control plane or a new identity system",
+    ],
+    noTitle: "Probably not, if you",
+    no: [
+      "need the session to survive a reboot of either machine: state is in memory",
+      "are on Windows: Linux and macOS only, for now",
+      "sit behind a network that blocks UDP: a TCP fallback is on the roadmap",
+      "mostly type over very high latency links: mosh's local echo is the better tool there",
+    ],
+  },
+  how: {
+    title: "How it works",
+    lead: "A small bridge at each end carries your SSH connection over QUIC, with a resumable session layer on top. SSH still does authentication and end-to-end encryption, and the tunnel never sees inside the SSH stream.",
+    laptop: "laptop",
+    server: "server · sshd",
+    delivered: "delivered",
+    buffer: "replay buffer",
+    lost: "lost on the wire",
+    phases: {
+      normal: { label: "Normal", caption: "Output flows from sshd to your terminal. The server keeps each chunk until the laptop acknowledges it." },
+      switch: { label: "IP changes", caption: "Wi-Fi to 5G: the laptop's address changes. QUIC migrates the connection to the new path, and packets keep flowing." },
+      outage: { label: "Network gone", caption: "No network at all. Chunks in flight are lost on the wire, and new output waits in the replay buffer. sshd notices nothing." },
+      resume: { label: "Resume", caption: "A new link comes up. Both ends compare byte offsets and replay exactly what is missing: no gap, no duplicate." },
+    },
+    play: "Play",
+    pause: "Pause",
+    points: [
+      { title: "Address changes", body: "Wi-Fi to 5G and NAT rebinding are handled by QUIC connection migration, usually without you noticing." },
+      { title: "Outages", body: "The session layer keeps unacknowledged bytes. Reconnect, exchange offsets, replay the rest. The default window is 60 s, and it is configurable." },
+      { title: "Nothing changes for SSH", body: "The inner stream is the unmodified SSH protocol. sshd, your keys, known_hosts and every ssh feature stay exactly as they are." },
+    ],
+  },
+  compare: {
+    title: "How it compares",
+    lead: "Honest trade-offs. tmux is a companion, not a competitor: the tunnel keeps the connection alive, and tmux keeps the work alive if the connection does die.",
+    tools: ["tingly-shell", "mosh", "Eternal Terminal", "autossh", "tmux alone"],
+    rows: [
+      { label: "Survives an IP change", cells: [{ v: "yes" }, { v: "yes" }, { v: "yes" }, { v: "no", note: "new session" }, { v: "no", note: "reattach" }] },
+      { label: "Survives a short outage", cells: [{ v: "yes", note: "60 s default" }, { v: "yes" }, { v: "yes" }, { v: "no", note: "new session" }, { v: "no", note: "reattach" }] },
+      { label: "Delivers every byte of output", cells: [{ v: "yes" }, { v: "no", note: "latest screen" }, { v: "yes" }, { v: "no" }, { v: "yes", note: "in the pane" }] },
+      { label: "scp, sftp, rsync, git over SSH", cells: [{ v: "yes" }, { v: "no" }, { v: "no" }, { v: "yes" }, { v: "yes" }] },
+      { label: "-L / -R / -D and agent forwarding", cells: [{ v: "yes" }, { v: "no" }, { v: "partial" }, { v: "yes" }, { v: "yes" }] },
+      { label: "Native scrollback", cells: [{ v: "yes" }, { v: "no" }, { v: "yes" }, { v: "yes" }, { v: "yes" }] },
+      { label: "sshd and SSH auth unchanged", cells: [{ v: "yes" }, { v: "yes" }, { v: "yes" }, { v: "yes" }, { v: "yes" }] },
+      { label: "Nothing extra on the server", cells: [{ v: "no", note: "1 daemon, 1 UDP port" }, { v: "no", note: "UDP 60000+" }, { v: "no", note: "etserver" }, { v: "yes" }, { v: "yes" }] },
+      { label: "Typing prediction on slow links", cells: [{ v: "no" }, { v: "yes" }, { v: "no" }, { v: "no" }, { v: "no" }] },
+    ],
+    footnote: "Why QUIC, and not MPTCP or WireGuard: see ADR-0001 in the docs.",
+  },
+  start: {
+    title: "Quick start",
+    lead: "About five minutes. You need a Linux or macOS client, a server running sshd, and one UDP port you can open.",
+    steps: [
+      { title: "Install on both machines", body: "Prebuilt binaries for linux/darwin × amd64/arm64 are on every release.", code: code.install, codeLabel: "shell", after: `Or with Go 1.26+: ${code.goInstall}` },
+      { title: "Server: run it next to sshd", body: "The tunnel reuses the SSH keys you already have. Its allow list is a plain authorized_keys file. Open UDP 7443, and note the pin it prints.", code: code.server, codeLabel: "shell" },
+      { title: "Client: one line in ~/.ssh/config", body: "Add an alias next to your existing one, so you can compare the two and switch back at any time. Make sure your key is in the agent (ssh-add -l).", code: code.client, codeLabel: "~/.ssh/config", after: "On first connect it prints the server's pin once, like SSH's host key prompt. Compare it with the pin the server printed." },
+      { title: "See it work", body: "Turn Wi-Fi off and on, switch to a hotspot, or close the lid for half a minute. The clock stops, then catches up with every second it missed.", code: code.tryIt, codeLabel: "shell" },
+    ],
+    more: "Teams, SSH CAs, hardware keys, systemd and troubleshooting: read the migration guide",
+  },
+  security: {
+    title: "An extra layer, not a replacement",
+    body: "sshd still authenticates you and SSH still encrypts everything end to end. To get through the tunnel, a client signs with a key from the server's allow list. The signature is bound to that TLS connection, so it can't be replayed or reused as an SSH login. Nothing secret goes on the wire. Revoking access means deleting a line and sending SIGHUP.",
+    link: "Threat model and hardening checklist",
+  },
+  evidence: {
+    title: "How we know it works",
+    lead: "Every push runs against a real sshd with real OpenSSH clients. No mocks at the edges.",
+    stats: [
+      { value: "18", label: "end-to-end cases", detail: "scp integrity, link destruction, a 30 s black hole, jump hosts, revocation" },
+      { value: "17", label: "everyday SSH scenarios", detail: "pty, 32 MiB output, all 256 byte values, -L/-R/-D, sftp, rsync, tmux" },
+      { value: "7", label: "roaming cases", detail: "measured by a remote counter; the same suite drives real Wi-Fi radios" },
+    ],
+    link: "Read the verification plan",
+  },
+  faq: {
+    title: "FAQ",
+    items: [
+      { q: "What if I'm offline longer than the linger time?", a: "The session is abandoned and ssh exits normally, the same as today. Raise --session-linger on both ends if your outages run longer, and keep tmux as the second line of defense." },
+      { q: "Does it make SSH faster?", a: "No, that isn't the goal. The goal is that it doesn't break. Performance work is on the roadmap." },
+      { q: "Can whoever runs the tunnel read my session?", a: "No. The tunnel carries the SSH protocol itself, which is already encrypted end to end between your ssh and sshd." },
+      { q: "sshd now sees connections from 127.0.0.1. Does that matter?", a: "It does for from=\"...\" restrictions and IP-based tools like fail2ban. The tunnel server logs which key or device each session belongs to. See R-1 in the security model." },
+      { q: "Does it survive a server or laptop reboot?", a: "Not yet. Session state lives in memory. Cross-process persistence is milestone M4 on the roadmap. Use tmux for that case." },
+    ],
+  },
+  footer: { license: "MPL-2.0 licensed", docs: "Design docs", madeWith: "Built with quic-go and golang.org/x/crypto, nothing else." },
+  copy: { copy: "Copy", copied: "Copied" },
+};
