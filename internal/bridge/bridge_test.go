@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0x0079/tingly-shell/internal/auth"
-	"github.com/0x0079/tingly-shell/internal/proto"
-	"github.com/0x0079/tingly-shell/internal/transport"
+	"github.com/0x0079/tingly-ssh/internal/auth"
+	"github.com/0x0079/tingly-ssh/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/transport"
 )
 
 // echoServer stands in for sshd: it echoes every byte back.

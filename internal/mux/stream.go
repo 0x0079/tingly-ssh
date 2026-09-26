@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // ErrStreamClosed is returned by Write after the local side closed its

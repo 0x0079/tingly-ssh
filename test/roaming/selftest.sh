@@ -14,7 +14,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
 RUN_ID=selftest-$(date +%Y%m%d-%H%M%S)
 ART=$HERE/artifacts/$RUN_ID
-BIN=${TINGLY_BIN:-$HERE/.bin/tingly-shell}
+BIN=${TINGLY_BIN:-$HERE/.bin/tingly-ssh}
 
 SSHD_PORT=${SSHD_PORT:-2042}
 TUNNEL_PORT=${TUNNEL_PORT:-7470}

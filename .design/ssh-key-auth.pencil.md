@@ -8,11 +8,11 @@
 
 ## 0. 问题
 
-用户从直连 SSH 切到 tingly-shell，要配置什么？
+用户从直连 SSH 切到 tingly-ssh，要配置什么？
 
 ```
  ┌──────────────── 你的电脑 ────────────────┐                ┌──────────────── 服务器 ────────────────┐
- │  ssh ──stdio──▶ tingly-shell proxy ══════╪═══ QUIC/TLS ═══╪══▶ tingly-shell server ──TCP──▶ sshd   │
+ │  ssh ──stdio──▶ tingly-ssh proxy ══════╪═══ QUIC/TLS ═══╪══▶ tingly-ssh server ──TCP──▶ sshd   │
  │   │                   │                  │                │           │                    │      │
  │  [A] ~/.ssh/id_*      │                  │                │           │   [A] authorized_keys    │
  │      known_hosts     [B] token + pin     │                │   [B] credentials（哈希）             │
@@ -32,7 +32,7 @@
 1. **零新秘密**：客户端用 ssh-agent（或本地未加密私钥）里**已经有的** SSH 密钥证明身份。
 2. **零 pin 配置**：在不发送 token 的前提下，服务端公钥走 TOFU（首次信任，像 `known_hosts`）。
 3. 最简客户端配置收敛为一行：
-   `ProxyCommand tingly-shell proxy --server %h:7443`
+   `ProxyCommand tingly-ssh proxy --server %h:7443`
 4. 安全性**不低于**现有 token + pin，且在"连到假服务端"这一条上**严格更强**。
 5. 保留 token 模式（CI / 无 agent 环境），两种方式可以在同一台服务端并存。
 
@@ -49,7 +49,7 @@
 ```
   用户设备                                                   服务端
   ┌────────────────────────┐                                ┌──────────────────────────────┐
-  │ tingly-shell proxy     │ ①── TLS 1.3 握手 ────────────▶ │                              │
+  │ tingly-ssh proxy     │ ①── TLS 1.3 握手 ────────────▶ │                              │
   │                        │ ◀─────────────────────────────  │                              │
   │                        │    双方各自算出：                │                              │
   │                        │    E = TLS exporter             │                              │
@@ -141,7 +141,7 @@ exporter 由 TLS 主密钥派生，中间人无法让两段连接的 E 相等（
   之后：  client ──▶ server 出示证书 ──▶ 与记录一致？ ──否──▶ 拒绝，告诉用户删哪一行
 ```
 
-- 文件：`~/.config/tingly-shell/known_servers`（`--known-servers` 覆盖），每行 `host:port sha256:<pin>`。
+- 文件：`~/.config/tingly-ssh/known_servers`（`--known-servers` 覆盖），每行 `host:port sha256:<pin>`。
 - 服务端信任的决策表：
 
 | 客户端配置 | 服务端认证方式 |
@@ -210,7 +210,7 @@ cert-authority,principals="alice,bob" ssh-ed25519 AAAA... corp-user-ca
 | `internal/auth/signer.go` | 客户端 `Prover`：agent / 本地私钥 → proofs |
 | `internal/transport` | `Link.Exporter()`、`Link.PeerPin()`、`KnownServers` 与 TOFU 的 `ClientTLS` |
 | `internal/bridge` | HELLO 构造、ticket 保存与出示、服务端 `authenticate`、ticket 表 |
-| `cmd/tingly-shell` | `server --authorized-keys`、`client/proxy --identity --known-servers`，token 变为可选 |
+| `cmd/tingly-ssh` | `server --authorized-keys`、`client/proxy --identity --known-servers`，token 变为可选 |
 
 ## 9. 测试与 harness
 
@@ -229,7 +229,7 @@ cert-authority,principals="alice,bob" ssh-ed25519 AAAA... corp-user-ca
 
 | 编号 | 场景 |
 | --- | --- |
-| E15 | 只有 ssh-agent + `--authorized-keys`：`ProxyCommand tingly-shell proxy --server …`，**无 token、无 pin**，ssh 登录成功，known_servers 被写入 |
+| E15 | 只有 ssh-agent + `--authorized-keys`：`ProxyCommand tingly-ssh proxy --server …`，**无 token、无 pin**，ssh 登录成功，known_servers 被写入 |
 | E16 | 同一 key 会话被 `SIGUSR1` 断链两次，数据不丢，客户端日志显示 ticket 恢复（不重签） |
 | E17 | 未在白名单里的 key 被拒，客户端立即退出不重试 |
 | E18 | 服务端换钥后 TOFU 拒绝连接并给出 known_servers 行号提示 |

@@ -37,7 +37,7 @@ SSH 的 transport 层（RFC 4253）假设底下是一条可靠、有序的 TCP �
 - **US1**：我在咖啡店用 Wi-Fi 连公司跳板机跑编译，出门切 5G，终端里的日志继续滚。
 - **US2**：我在地铁里丢网 40 秒，出站后终端还在，不用重连 tmux。
 - **US3**：我不想在服务器上开新端口给未知协议 → 我只需要 UDP/443，并用 token + 证书 pin 限制接入。
-- **US4**：我希望用标准 `ssh` 命令：`ssh -o ProxyCommand='tingly-shell proxy ...' host`。
+- **US4**：我希望用标准 `ssh` 命令：`ssh -o ProxyCommand='tingly-ssh proxy ...' host`。
 
 ## 5. 与现有方案的关系
 

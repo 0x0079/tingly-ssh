@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // Role says which end of the session this is. Only clients open streams.

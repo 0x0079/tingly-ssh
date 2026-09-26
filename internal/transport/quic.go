@@ -9,7 +9,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // Tuning holds the QUIC knobs we expose. Defaults favour fast detection of a
@@ -80,7 +80,8 @@ func (l *Link) RemoteAddr() net.Addr { return l.conn.RemoteAddr() }
 
 // ExporterLabel is the RFC 8446 §7.5 exporter label for the HELLO binding
 // message. Both ends derive the same 32 bytes from the TLS master secret; a
-// man in the middle ends up with two different values, one per side.
+// man in the middle ends up with two different values, one per side. It keeps
+// the project's original name, tingly-shell, because both ends must agree on it.
 const ExporterLabel = "EXPORTER-tingly-shell-hello"
 
 // Exporter returns this connection's channel binding value.

@@ -82,7 +82,7 @@ ci-runner-3        sha256:77de…                                    2026-12-31
   **会话绑定**（别的身份即使知道 `session_id` 也接管不了）、
   **每凭据配额**（`--max-sessions-per-credential`）、
   **审计归因**（日志里是 `credential=laptop-mbp14`）。
-- 生成：`tingly-shell keygen --label laptop-mbp14 [--expires 2027-06-01]`，
+- 生成：`tingly-ssh keygen --label laptop-mbp14 [--expires 2027-06-01]`，
   它把 token 打到 stdout、把可粘贴进服务端文件的记录行打到 stderr。
 - **撤销 = 删掉那一行 + `kill -HUP`**，不重启、不影响别人。
   文件解析失败时保留旧的一套，所以编辑时打错字不会把所有人锁在外面。
@@ -123,7 +123,7 @@ ci-runner-3        sha256:77de…                                    2026-12-31
 
 - 服务端首次启动若无 `--cert`/`--key`，生成 Ed25519 自签名证书并持久化到 `--state-dir`，
   在日志中打印 `pin=sha256:<base64(SHA256(SPKI))>`，供客户端配置。
-- token 由 `tingly-shell keygen` 生成（32 字节随机，base64），文件权限要求 `0600`，
+- token 由 `tingly-ssh keygen` 生成（32 字节随机，base64），文件权限要求 `0600`，
   否则服务端拒绝启动（防止复制粘贴导致的全局可读 token）。
 - 不做密钥轮转自动化：轮转 = 换文件 + 重启（会话会中断），记录在 roadmap。
 
@@ -193,7 +193,7 @@ ci-runner-3        sha256:77de…                                    2026-12-31
 | R-8 | 隧道服务端是新增的对外暴露面（UDP 端口） | 一旦有远程漏洞即为入口 | 以非 root 运行 + systemd 沙箱 + 最小白名单，见 §9 |
 | R-9 | 元数据对服务端可见：目标提示、会话数、时间与流量模式 | 可做流量分析 | 设计使然；日志默认不含 payload，只打印会话 ID 前 8 位 |
 | R-10 | 重放攻击面 | — | 已缓解：TLS 1.3 提供前向保密；**0-RTT 未启用**，因此没有 0-RTT 重放问题 |
-| R-11 | **ALPN `tingly/0` 在 ClientHello 里明文可见** | DPI 可以一眼认出"这是 tingly-shell"，在受限网络里可能被针对性阻断 | 未修。修法：把 ALPN 做成可配置（例如伪装成 `h3` 与 HTTP/3 混流）。注意这只对抗协议识别，不提供额外机密性 |
+| R-11 | **ALPN `tingly/0` 在 ClientHello 里明文可见** | DPI 可以一眼认出"这是 tingly-ssh"，在受限网络里可能被针对性阻断 | 未修。修法：把 ALPN 做成可配置（例如伪装成 `h3` 与 HTTP/3 混流）。注意这只对抗协议识别，不提供额外机密性 |
 | R-12 | **SNI 明文可见** | 泄露隧道服务端的主机名 | 未修。用 `--pin` 时其实不需要 SNI（pin 已完成服务端认证），可以加 `--no-sni` 省掉这个字段。服务端 IP 本来就可见，所以收益有限，主要对域名前置/抗审查场景有意义 |
 | R-13 | **隧道服务端到目标机那一跳是普通 TCP** | 该段只有 SSH 自身的加密，隧道不提供额外保护 | 设计使然。部署要求：这一跳应在可信网络内（同机 loopback，或同机房内网）。跳板机场景里 sidecar 到跳板机的那一跳属于此列，见 `08-jump-host-topologies.md` §6 |
 

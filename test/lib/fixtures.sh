@@ -16,8 +16,8 @@ build_binary() {
         info "using prebuilt binary $BIN"
         return
     fi
-    info "building tingly-shell"
-    (cd "$REPO_ROOT" && go build -o "$BIN" ./cmd/tingly-shell) || die "build failed"
+    info "building tingly-ssh"
+    (cd "$REPO_ROOT" && go build -o "$BIN" ./cmd/tingly-ssh) || die "build failed"
 }
 
 make_token() {

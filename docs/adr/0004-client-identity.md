@@ -62,7 +62,7 @@ sha256:AAAA...   laptop-mbp14      # 标识
 sha256:BBBB...   phone-termux
 ```
 
-- 客户端：`tingly-shell keygen --client` 生成自签名 Ed25519 密钥对，**私钥永不离开设备**；
+- 客户端：`tingly-ssh keygen --client` 生成自签名 Ed25519 密钥对，**私钥永不离开设备**；
   把打印出来的 pin 交给服务端管理员，和交 SSH 公钥完全一样的流程。
 - 服务端：`tls.Config.ClientAuth = RequireAnyClientCert` + `VerifyPeerCertificate`
   比对白名单；匹配到的那一行就是这条链路的**身份**。
@@ -122,7 +122,7 @@ phone-termux       sha256:c41a…
 ci-runner-3        sha256:77de…                                     2026-12-31
 ```
 
-- `tingly-shell keygen` 除了打印 token，再打印一行可直接粘进服务端文件的记录。
+- `tingly-ssh keygen` 除了打印 token，再打印一行可直接粘进服务端文件的记录。
 - 客户端**完全不用改**：还是 `--token-file`，里面还是那串 token。
 - 服务端收到 token 后算 `sha256` 与文件比对（常量时间），命中的那一行就是**身份**。
   token 是 32 字节随机数，熵足够，所以用 SHA-256 而不是 bcrypt/argon2 那类慢哈希。

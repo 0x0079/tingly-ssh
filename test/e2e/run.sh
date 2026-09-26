@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end verification for tingly-shell against a real sshd and a real ssh
+# End-to-end verification for tingly-ssh against a real sshd and a real ssh
 # client. Neither side of SSH is modified: sshd runs with its own config file
 # and ssh reaches it through an extra -F config that adds a ProxyCommand.
 #
@@ -461,7 +461,7 @@ case_E18() {
 
 main() {
     mkdir -p "$ART"
-    log "tingly-shell end-to-end verification, run $RUN_ID"
+    log "tingly-ssh end-to-end verification, run $RUN_ID"
     command -v ssh >/dev/null   || die "ssh is not installed"
     command -v /usr/sbin/sshd >/dev/null || die "sshd is not installed"
     build_binary

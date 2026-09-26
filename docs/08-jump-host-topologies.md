@@ -7,7 +7,7 @@
 支持，**跳板机零改动**，ssh 侧只需在配置里新增一段 `Host` 块，用法仍是 `ssh prod-web01`。
 
 但有一个硬前提：**必须有一台"跳板机这一侧、客户端能用 UDP 直达、且我们能装东西"的机器**
-来跑 `tingly-shell server`。没有这样的机器就无解，见 §5。
+来跑 `tingly-ssh server`。没有这样的机器就无解，见 §5。
 
 ## 2. 为什么只保护第一跳就够
 
@@ -43,7 +43,7 @@ sidecar 可以是同机房任意一台我们有权限的机器（一台最小规
 服务端：
 
 ```bash
-tingly-shell server --listen :7443 \
+tingly-ssh server --listen :7443 \
     --target jump.internal:22 \
     --token-file /etc/tingly/token
 ```
@@ -56,7 +56,7 @@ tingly-shell server --listen :7443 \
 Host jump
     HostName jump.example.com
     User me
-    ProxyCommand tingly-shell proxy --server sidecar.example.com:7443 \
+    ProxyCommand tingly-ssh proxy --server sidecar.example.com:7443 \
         --target jump.internal:22 --token-file ~/.tingly/token --pin sha256:...
 
 Host prod-*
@@ -79,7 +79,7 @@ scp file prod-web01:/tmp/
 常驻一个客户端，把第一跳变成本地端口：
 
 ```bash
-tingly-shell client --server sidecar.example.com:7443 \
+tingly-ssh client --server sidecar.example.com:7443 \
     --target jump.internal:22 --listen 127.0.0.1:2222 \
     --token-file ~/.tingly/token --pin sha256:...
 ```

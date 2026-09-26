@@ -3,7 +3,7 @@ package bridge
 import (
 	"fmt"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // HandshakeError reports a HELLO_ACK that refused the link.

@@ -11,7 +11,7 @@
 
 - 用例清单与判定标准：`docs/07-verification-plan.md` §2
 - 依赖：`go`、`ssh`、`ssh-agent`、`ssh-add`、`ssh-keygen`、`/usr/sbin/sshd`、`python3`
-- 复用已有二进制：`TINGLY_BIN=/path/to/tingly-shell ./run.sh`
+- 复用已有二进制：`TINGLY_BIN=/path/to/tingly-ssh ./run.sh`
 - 结果与全部日志：`artifacts/<时间戳>/`（`results.md` 是结果表）
 
 **不改动 SSH 双端**：sshd 用脚本生成的独立 `sshd_config`（自带 host key 与

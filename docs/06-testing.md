@@ -28,11 +28,11 @@ M3 会用同一个入口响应操作系统的"默认路由变了"事件，主动
 ## 3. 本地端到端手工验证
 
 ```bash
-go build ./cmd/tingly-shell
-./tingly-shell keygen > /tmp/token
-./tingly-shell server --listen 127.0.0.1:7443 --target 127.0.0.1:22 \
+go build ./cmd/tingly-ssh
+./tingly-ssh keygen > /tmp/token
+./tingly-ssh server --listen 127.0.0.1:7443 --target 127.0.0.1:22 \
     --token-file /tmp/token --state-dir /tmp/tingly-server   # 日志里抄下 pin=
-./tingly-shell client --server 127.0.0.1:7443 --listen 127.0.0.1:2222 \
+./tingly-ssh client --server 127.0.0.1:7443 --listen 127.0.0.1:2222 \
     --token-file /tmp/token --pin sha256:...
 ssh -p 2222 user@127.0.0.1
 ```
@@ -45,8 +45,8 @@ class H(socketserver.BaseRequestHandler):
     def handle(self):
         while (d:=self.request.recv(4096)): self.request.sendall(d.upper())
 socketserver.ThreadingTCPServer(("127.0.0.1",2023),H).serve_forever()' &
-./tingly-shell server --listen 127.0.0.1:7443 --target 127.0.0.1:2023 --token-file /tmp/token --state-dir /tmp/ts
-./tingly-shell client --server 127.0.0.1:7443 --listen 127.0.0.1:2222 --token-file /tmp/token --pin sha256:...
+./tingly-ssh server --listen 127.0.0.1:7443 --target 127.0.0.1:2023 --token-file /tmp/token --state-dir /tmp/ts
+./tingly-ssh client --server 127.0.0.1:7443 --listen 127.0.0.1:2222 --token-file /tmp/token --pin sha256:...
 printf 'hello\n' | nc 127.0.0.1 2222     # 期望 HELLO
 ```
 

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"log"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -40,5 +42,26 @@ func TestStdlibLogFollowsLogLevel(t *testing.T) {
 func TestProxyDefaultsToWarn(t *testing.T) {
 	if defaultLogLevel(true) != "warn" || defaultLogLevel(false) != "info" {
 		t.Fatalf("defaults: proxy=%s client=%s", defaultLogLevel(true), defaultLogLevel(false))
+	}
+}
+
+func TestPreferExistingKeepsLegacyStateDir(t *testing.T) {
+	base := t.TempDir()
+	dir, legacy := filepath.Join(base, "tingly-ssh"), filepath.Join(base, "tingly-shell")
+
+	if got := preferExisting(dir, legacy); got != dir {
+		t.Fatalf("fresh install: got %s, want %s", got, dir)
+	}
+	if err := os.Mkdir(legacy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := preferExisting(dir, legacy); got != legacy {
+		t.Fatalf("only the legacy directory exists: got %s, want %s", got, legacy)
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := preferExisting(dir, legacy); got != dir {
+		t.Fatalf("both exist: got %s, want %s", got, dir)
 	}
 }

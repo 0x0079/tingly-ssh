@@ -1,16 +1,16 @@
-# tingly-shell
+# tingly-ssh
 
 English | [简体中文](README.zh-CN.md)
 
-[![CI](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
+[![CI](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/0x0079/tingly-ssh)](https://github.com/0x0079/tingly-ssh/releases)
 
 **SSH over QUIC with session resumption.** No changes to OpenSSH or sshd: a user-space
 bridge sits at each end with QUIC and a resumable session layer in between, so an SSH
 connection survives a Wi-Fi to cellular switch, NAT rebinding, or a brief outage.
 
 ```
-OpenSSH client ─TCP/stdio─▶ tingly-shell client ─QUIC─▶ tingly-shell server ─TCP─▶ sshd
+OpenSSH client ─TCP/stdio─▶ tingly-ssh client ─QUIC─▶ tingly-ssh server ─TCP─▶ sshd
                                     └── Resumable Session Layer ──┘
 ```
 
@@ -31,32 +31,32 @@ Linux and macOS only (amd64/arm64): reconnect and credential reload are driven b
 signals (`SIGUSR1`, `SIGHUP`), so there is no Windows build.
 
 **Prebuilt binaries** are attached to every
-[release](https://github.com/0x0079/tingly-shell/releases) — built and checksummed by CI,
+[release](https://github.com/0x0079/tingly-ssh/releases) — built and checksummed by CI,
 see [`.goreleaser.yaml`](.goreleaser.yaml):
 
 ```bash
 # Pick the archive for your OS/ARCH from the releases page, then e.g. on linux/amd64:
-curl -LO https://github.com/0x0079/tingly-shell/releases/latest/download/tingly-shell_<version>_linux_amd64.tar.gz
-tar xzf tingly-shell_<version>_linux_amd64.tar.gz
-sudo install -m 755 tingly-shell /usr/local/bin/tingly-shell
+curl -LO https://github.com/0x0079/tingly-ssh/releases/latest/download/tingly-ssh_<version>_linux_amd64.tar.gz
+tar xzf tingly-ssh_<version>_linux_amd64.tar.gz
+sudo install -m 755 tingly-ssh /usr/local/bin/tingly-ssh
 ```
 
 **With Go** (module path is public once this repo is; requires Go 1.26+):
 
 ```bash
-go install github.com/0x0079/tingly-shell/cmd/tingly-shell@latest
+go install github.com/0x0079/tingly-ssh/cmd/tingly-ssh@latest
 ```
 
 **From source**:
 
 ```bash
-git clone https://github.com/0x0079/tingly-shell.git
-cd tingly-shell
-go build ./cmd/tingly-shell
+git clone https://github.com/0x0079/tingly-ssh.git
+cd tingly-ssh
+go build ./cmd/tingly-ssh
 ```
 
-Any of the three put a `tingly-shell` binary in your `$PATH` (or `./tingly-shell` for the
-from-source build). Check what you got: `tingly-shell version`.
+Any of the three put a `tingly-ssh` binary in your `$PATH` (or `./tingly-ssh` for the
+from-source build). Check what you got: `tingly-ssh version`.
 
 ## Quick start
 
@@ -65,23 +65,23 @@ your ssh-agent, so there is no new secret to mint, copy or rotate, and no pin to
 configure:
 
 ```bash
-go build ./cmd/tingly-shell
+go build ./cmd/tingly-ssh
 
 # Server, next to sshd. The allow list is plain authorized_keys format: copy the
 # users' public key lines (or a cert-authority line) into it.
 cat ~alice/.ssh/authorized_keys >> /etc/tingly/authorized_keys
-./tingly-shell server --listen :7443 --target 127.0.0.1:22 --authorized-keys /etc/tingly/authorized_keys
+./tingly-ssh server --listen :7443 --target 127.0.0.1:22 --authorized-keys /etc/tingly/authorized_keys
 
 # Client: one line in ~/.ssh/config, nothing else.
 Host myserver
-    ProxyCommand tingly-shell proxy --server %h:7443
+    ProxyCommand tingly-ssh proxy --server %h:7443
 ```
 
 The client signs with the keys in `SSH_AUTH_SOCK` (or `--identity FILE`). The signature is
 bound to the TLS connection it was made on, so a man in the middle cannot replay it, and
 it is framed as an OpenSSH `SSHSIG` with its own namespace, so it can never pass as an SSH
 login signature. Because nothing secret goes on the wire, the tunnel server's key is safely
-trusted on first use and recorded in `~/.config/tingly-shell/known_servers`, the way
+trusted on first use and recorded in `~/.config/tingly-ssh/known_servers`, the way
 `known_hosts` works; a changed key stops the client. Reconnects after a network change use
 a session-bound resume ticket instead of signing again, so a FIDO key is touched once per
 session, not once per Wi-Fi switch. Revoking is deleting the line and sending SIGHUP.
@@ -96,18 +96,18 @@ the same server:
 # Mint a credential per device. The token goes to the device; the record line
 # printed on stderr goes into the server's credentials file, which only ever
 # holds a hash.
-./tingly-shell keygen --label laptop-mbp14 > token && chmod 600 token
+./tingly-ssh keygen --label laptop-mbp14 > token && chmod 600 token
 
 # Server, next to sshd. Its startup log prints pin=sha256:...
-./tingly-shell server --listen :7443 --target 127.0.0.1:22 --credentials credentials
+./tingly-ssh server --listen :7443 --target 127.0.0.1:22 --credentials credentials
 
 # Client A: local port forward
-./tingly-shell client --server SERVER:7443 --listen 127.0.0.1:2222 \
+./tingly-ssh client --server SERVER:7443 --listen 127.0.0.1:2222 \
     --token-file token --pin sha256:...
 ssh -p 2222 user@127.0.0.1
 
 # Client B: ProxyCommand, no local listening port
-ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
+ssh -o ProxyCommand="./tingly-ssh proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
 ```
 
 With a token, `--pin` and `--token-file` answer different questions and you need both. The pin is the
@@ -153,7 +153,7 @@ Chinese; this README is the English entry point):
 | `internal/auth` | Client identities: hashed per-device tokens, authorized SSH keys and certificates, SSHSIG proofs, the ssh-agent prover |
 | `internal/transport` | QUIC dial/listen, TLS, self-signed certificates, SPKI pinning, TLS exporter, known servers (TOFU), token loading |
 | `internal/bridge` | Client (TCP/stdio entry plus reconnect supervisor), server (session registry plus target allowlist) |
-| `cmd/tingly-shell` | Subcommands `server`, `client`, `proxy`, `keygen` |
+| `cmd/tingly-ssh` | Subcommands `server`, `client`, `proxy`, `keygen` |
 
 Two direct dependencies: `github.com/quic-go/quic-go` and `golang.org/x/crypto` (for
 `ssh` key parsing, certificates and the agent protocol; it was already in the module graph
