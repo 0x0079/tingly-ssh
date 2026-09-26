@@ -10,7 +10,7 @@
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
-BIN=${TINGLY_BIN:-$REPO_ROOT/test/scenarios/.bin/tingly-shell}
+BIN=${TINGLY_BIN:-$REPO_ROOT/test/scenarios/.bin/tingly-ssh}
 RUN_ID=$(date +%Y%m%d-%H%M%S)
 ART=${ART_DIR:-$HERE/artifacts/$RUN_ID}
 
@@ -27,7 +27,7 @@ TEST_LIB=$(cd "$HERE/../lib" && pwd)
 source "$TEST_LIB/common.sh"
 source "$TEST_LIB/fixtures.sh"
 
-SUMMARY_TITLE="tingly-shell SSH scenario suite"
+SUMMARY_TITLE="tingly-ssh SSH scenario suite"
 
 QUICK=0
 SELECT=()
@@ -446,7 +446,7 @@ set_summary_meta() {
 
 main() {
     mkdir -p "$ART"
-    log "tingly-shell SSH scenarios, run $RUN_ID"
+    log "tingly-ssh SSH scenarios, run $RUN_ID"
     command -v ssh >/dev/null || die "ssh is not installed"
     command -v python3 >/dev/null || die "python3 is required by the pty driver"
     build_binary

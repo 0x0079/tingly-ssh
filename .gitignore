@@ -1,4 +1,4 @@
-/tingly-shell
+/tingly-ssh
 *.test
 
 /test/e2e/.bin/

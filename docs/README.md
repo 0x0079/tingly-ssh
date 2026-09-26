@@ -1,6 +1,6 @@
-# tingly-shell 设计文档索引
+# tingly-ssh 设计文档索引
 
-`tingly-shell` 是一个**用户态 SSH 漫游隧道**：不修改 OpenSSH / sshd，在两端各放一个 bridge 进程，
+`tingly-ssh` 是一个**用户态 SSH 漫游隧道**：不修改 OpenSSH / sshd，在两端各放一个 bridge 进程，
 中间跑 QUIC + 可恢复会话层（Resumable Session Layer），让 SSH 连接在 Wi-Fi ↔ 蜂窝切换、
 NAT rebinding、甚至短时断网之后继续存活。
 
@@ -8,11 +8,11 @@ NAT rebinding、甚至短时断网之后继续存活。
 OpenSSH client
    │ TCP (localhost) 或 ProxyCommand stdio
    ▼
-tingly-shell client  ──┐
+tingly-ssh client  ──┐
    │                   │ Resumable Session Layer (session_id / offset / replay)
    │ QUIC (RFC 9000)   │ QUIC Connection Migration (Connection ID / path validation)
    ▼                   │
-tingly-shell server  ──┘
+tingly-ssh server  ──┘
    │ TCP (localhost)
    ▼
 sshd

@@ -1,4 +1,4 @@
-// Command tingly-shell is the SSH-over-QUIC bridge: a client that accepts
+// Command tingly-ssh is the SSH-over-QUIC bridge: a client that accepts
 // local TCP or stdio, a server that dials sshd, and a resumable session layer
 // in between. See docs/01-architecture.md.
 package main
@@ -21,26 +21,26 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/0x0079/tingly-shell/internal/auth"
-	"github.com/0x0079/tingly-shell/internal/bridge"
-	"github.com/0x0079/tingly-shell/internal/proto"
-	"github.com/0x0079/tingly-shell/internal/transport"
+	"github.com/0x0079/tingly-ssh/internal/auth"
+	"github.com/0x0079/tingly-ssh/internal/bridge"
+	"github.com/0x0079/tingly-ssh/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/transport"
 )
 
-const usage = `tingly-shell - SSH over QUIC with session resumption
+const usage = `tingly-ssh - SSH over QUIC with session resumption
 
 Usage:
-  tingly-shell server  --listen :7443 --target 127.0.0.1:22 --authorized-keys FILE [--credentials FILE]
-  tingly-shell proxy   --server HOST:7443                      # SSH keys from ssh-agent, server key trusted on first use
-  tingly-shell client  --server HOST:7443 --listen 127.0.0.1:2222
-  tingly-shell proxy   --server HOST:7443 --token-file FILE --pin sha256:...   # token instead of keys
-  tingly-shell keygen --label laptop-mbp14 [--expires 2027-06-01]
-  tingly-shell version
+  tingly-ssh server  --listen :7443 --target 127.0.0.1:22 --authorized-keys FILE [--credentials FILE]
+  tingly-ssh proxy   --server HOST:7443                      # SSH keys from ssh-agent, server key trusted on first use
+  tingly-ssh client  --server HOST:7443 --listen 127.0.0.1:2222
+  tingly-ssh proxy   --server HOST:7443 --token-file FILE --pin sha256:...   # token instead of keys
+  tingly-ssh keygen --label laptop-mbp14 [--expires 2027-06-01]
+  tingly-ssh version
 
 Modes:
   server   run next to sshd and bridge incoming streams to --target
   client   listen on a local TCP port; "ssh -p 2222 user@127.0.0.1"
-  proxy    bridge stdin/stdout, for ssh -o ProxyCommand='tingly-shell proxy ...'
+  proxy    bridge stdin/stdout, for ssh -o ProxyCommand='tingly-ssh proxy ...'
   keygen   mint a credential: a token for one device plus its server record
   version  print the build version
 
@@ -48,7 +48,7 @@ Signals:
   SIGUSR1  (client, proxy) drop the current link and reconnect, e.g. after a network change
   SIGHUP   (server) reload the credentials and authorized keys files; revoking is deleting a line
 
-Run "tingly-shell <mode> -h" for the flags of a mode.
+Run "tingly-ssh <mode> -h" for the flags of a mode.
 `
 
 // version is overridden at release build time via
@@ -74,7 +74,7 @@ func main() {
 	case "keygen":
 		err = runKeygen(os.Args[2:])
 	case "version", "-v", "--version":
-		fmt.Println("tingly-shell " + version)
+		fmt.Println("tingly-ssh " + version)
 		return
 	case "-h", "--help", "help":
 		fmt.Print(usage)
@@ -84,7 +84,7 @@ func main() {
 		os.Exit(2)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintf(os.Stderr, "tingly-shell: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tingly-ssh: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -158,7 +158,7 @@ func runServer(ctx context.Context, args []string) error {
 	case *credFile == "" && *tokenFile != "":
 		*credFile = *tokenFile
 	case *credFile == "" && *keysFile == "":
-		return errors.New("--authorized-keys or --credentials is required: list users' SSH public keys, or mint tokens with `tingly-shell keygen --label <device>`")
+		return errors.New("--authorized-keys or --credentials is required: list users' SSH public keys, or mint tokens with `tingly-ssh keygen --label <device>`")
 	}
 	var creds *auth.Store
 	if *credFile != "" {
@@ -252,7 +252,7 @@ func runClient(ctx context.Context, args []string, stdioMode bool) error {
 	}
 	fs := flag.NewFlagSet(name, flag.ExitOnError)
 	var (
-		server     = fs.String("server", "", "tingly-shell server address, host:port (required)")
+		server     = fs.String("server", "", "tingly-ssh server address, host:port (required)")
 		listen     = fs.String("listen", "127.0.0.1:2222", "local TCP address to accept ssh on (client mode only)")
 		target     = fs.String("target", "127.0.0.1:22", "target hint sent to the server")
 		tokenFile  = fs.String("token-file", "", "authenticate with this pre-shared token (mode 0600) instead of SSH keys")
@@ -477,9 +477,23 @@ func splitList(s string) []string {
 
 func defaultStateDir(role string) string {
 	if dir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(dir, "tingly-shell", role)
+		return filepath.Join(preferExisting(filepath.Join(dir, "tingly-ssh"), filepath.Join(dir, "tingly-shell")), role)
 	}
-	return filepath.Join(".", ".tingly-shell", role)
+	return filepath.Join(preferExisting(filepath.Join(".", ".tingly-ssh"), filepath.Join(".", ".tingly-shell")), role)
+}
+
+// preferExisting returns dir, unless only legacy (the directory's name before
+// the project was renamed from tingly-shell) exists. Keeping the old directory
+// keeps a server's certificate, and with it every client's pin and
+// known_servers entry, valid across the upgrade.
+func preferExisting(dir, legacy string) string {
+	if _, err := os.Stat(dir); err == nil {
+		return dir
+	}
+	if info, err := os.Stat(legacy); err == nil && info.IsDir() {
+		return legacy
+	}
+	return dir
 }
 
 // defaultKnownServers sits next to the role directories rather than inside

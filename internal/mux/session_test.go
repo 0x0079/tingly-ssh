@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // pair is a client/server session pair that can be linked, cut and relinked,

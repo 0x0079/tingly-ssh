@@ -1,16 +1,16 @@
-# tingly-shell
+# tingly-ssh
 
 [English](README.md) | 简体中文
 
-[![CI](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-shell/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/0x0079/tingly-shell)](https://github.com/0x0079/tingly-shell/releases)
+[![CI](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml/badge.svg)](https://github.com/0x0079/tingly-ssh/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/0x0079/tingly-ssh)](https://github.com/0x0079/tingly-ssh/releases)
 
 **SSH over QUIC with session resumption.** 不改 OpenSSH、不改 sshd，在两端各放一个用户态
 bridge，中间跑 QUIC + 可恢复会话层，让 SSH 连接在 Wi-Fi ↔ 蜂窝切换、NAT rebinding、
 甚至短时断网之后继续存活。
 
 ```
-OpenSSH client ─TCP/stdio─▶ tingly-shell client ─QUIC─▶ tingly-shell server ─TCP─▶ sshd
+OpenSSH client ─TCP/stdio─▶ tingly-ssh client ─QUIC─▶ tingly-ssh server ─TCP─▶ sshd
                                     └── Resumable Session Layer ──┘
 ```
 
@@ -30,32 +30,32 @@ OpenSSH client ─TCP/stdio─▶ tingly-shell client ─QUIC─▶ tingly-shell
 （`SIGUSR1`、`SIGHUP`）驱动的，所以没有 Windows 版本。
 
 **预编译二进制**挂在每个
-[release](https://github.com/0x0079/tingly-shell/releases) 下面，由 CI 构建并生成校验和，
+[release](https://github.com/0x0079/tingly-ssh/releases) 下面，由 CI 构建并生成校验和，
 配置见 [`.goreleaser.yaml`](.goreleaser.yaml)：
 
 ```bash
 # 去 releases 页面挑自己 OS/ARCH 对应的包，例如 linux/amd64：
-curl -LO https://github.com/0x0079/tingly-shell/releases/latest/download/tingly-shell_<version>_linux_amd64.tar.gz
-tar xzf tingly-shell_<version>_linux_amd64.tar.gz
-sudo install -m 755 tingly-shell /usr/local/bin/tingly-shell
+curl -LO https://github.com/0x0079/tingly-ssh/releases/latest/download/tingly-ssh_<version>_linux_amd64.tar.gz
+tar xzf tingly-ssh_<version>_linux_amd64.tar.gz
+sudo install -m 755 tingly-ssh /usr/local/bin/tingly-ssh
 ```
 
 **用 Go 安装**（仓库公开后 module path 才能被拉取；需要 Go 1.26+）：
 
 ```bash
-go install github.com/0x0079/tingly-shell/cmd/tingly-shell@latest
+go install github.com/0x0079/tingly-ssh/cmd/tingly-ssh@latest
 ```
 
 **从源码构建**：
 
 ```bash
-git clone https://github.com/0x0079/tingly-shell.git
-cd tingly-shell
-go build ./cmd/tingly-shell
+git clone https://github.com/0x0079/tingly-ssh.git
+cd tingly-ssh
+go build ./cmd/tingly-ssh
 ```
 
-三种方式都会得到一个 `tingly-shell` 可执行文件（从源码构建的话是 `./tingly-shell`）。
-确认版本：`tingly-shell version`。
+三种方式都会得到一个 `tingly-ssh` 可执行文件（从源码构建的话是 `./tingly-ssh`）。
+确认版本：`tingly-ssh version`。
 
 ## 快速开始
 
@@ -63,21 +63,21 @@ go build ./cmd/tingly-shell
 也不用配 pin：
 
 ```bash
-go build ./cmd/tingly-shell
+go build ./cmd/tingly-ssh
 
 # 服务端：和 sshd 同机。白名单就是 authorized_keys 格式，把用户的公钥行（或 cert-authority 行）复制进去
 cat ~alice/.ssh/authorized_keys >> /etc/tingly/authorized_keys
-./tingly-shell server --listen :7443 --target 127.0.0.1:22 --authorized-keys /etc/tingly/authorized_keys
+./tingly-ssh server --listen :7443 --target 127.0.0.1:22 --authorized-keys /etc/tingly/authorized_keys
 
 # 客户端：~/.ssh/config 里一行，别的都不用配
 Host myserver
-    ProxyCommand tingly-shell proxy --server %h:7443
+    ProxyCommand tingly-ssh proxy --server %h:7443
 ```
 
 客户端用 `SSH_AUTH_SOCK` 里的钥匙（或 `--identity FILE`）签名。签名绑定在这一条 TLS 连接上，
 中间人拿去重放无效；签名套了 OpenSSH `SSHSIG` 格式并带专用 namespace，不可能被挪用成 SSH 登录签名。
 线上不传任何秘密，所以隧道服务端的公钥可以安全地"首次信任"，记在
-`~/.config/tingly-shell/known_servers`（和 `known_hosts` 一样），公钥变了客户端直接拒绝。
+`~/.config/tingly-ssh/known_servers`（和 `known_hosts` 一样），公钥变了客户端直接拒绝。
 换网重连用与会话绑定的恢复凭证，不再重新签名，所以 FIDO 钥匙每个会话只碰一次。
 撤销 = 删一行 + `SIGHUP`。设计与威胁分析：[`.design/ssh-key-auth.pencil.md`](.design/ssh-key-auth.pencil.md)。
 已有 SSH 配置的人如何一步步切换（含排错表）：[`docs/09-migrating-from-ssh.md`](docs/09-migrating-from-ssh.md)。
@@ -87,18 +87,18 @@ Host myserver
 ```bash
 # 每台设备一份凭据：token 给设备，stderr 上打印的记录行加进服务端的凭据文件
 # （服务端只存哈希，不存 token 本身）
-./tingly-shell keygen --label laptop-mbp14 > token && chmod 600 token
+./tingly-ssh keygen --label laptop-mbp14 > token && chmod 600 token
 
 # 服务端：和 sshd 同机。启动日志会打印 pin=sha256:...
-./tingly-shell server --listen :7443 --target 127.0.0.1:22 --credentials credentials
+./tingly-ssh server --listen :7443 --target 127.0.0.1:22 --credentials credentials
 
 # 客户端 A：本地端口转发
-./tingly-shell client --server SERVER:7443 --listen 127.0.0.1:2222 \
+./tingly-ssh client --server SERVER:7443 --listen 127.0.0.1:2222 \
     --token-file token --pin sha256:...
 ssh -p 2222 user@127.0.0.1
 
 # 客户端 B：ProxyCommand（无本地监听端口）
-ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
+ssh -o ProxyCommand="./tingly-ssh proxy --server SERVER:7443 --token-file token --pin sha256:..." user@host
 ```
 
 跳板机场景（`笔记本 → 跳板机 → 目标机`，**跳板机零改动**）：把第一跳套进隧道，
@@ -139,7 +139,7 @@ ssh -o ProxyCommand="./tingly-shell proxy --server SERVER:7443 --token-file toke
 | `internal/auth` | 客户端身份：哈希存储的每设备 token、授权 SSH 公钥与证书、SSHSIG 签名证明、ssh-agent 签名器 |
 | `internal/transport` | QUIC dial/listen、TLS、自签证书、SPKI pin、TLS exporter、known_servers（首次信任）、token 加载 |
 | `internal/bridge` | client（TCP/stdio 接入 + 重连 supervisor）、server（会话注册表 + 目标白名单） |
-| `cmd/tingly-shell` | `server` / `client` / `proxy` / `keygen` 四个子命令 |
+| `cmd/tingly-ssh` | `server` / `client` / `proxy` / `keygen` 四个子命令 |
 
 直接依赖两个：`github.com/quic-go/quic-go` 与 `golang.org/x/crypto`（用其 `ssh` 包解析公钥、证书和 agent 协议；它本来就经由 quic-go 在依赖图里）。其余全部用标准库，理由见 ADR-0003。
 

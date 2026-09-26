@@ -1,4 +1,4 @@
-# 09 · 从直连 SSH 切换到 tingly-shell（用已有的 SSH 密钥）
+# 09 · 从直连 SSH 切换到 tingly-ssh（用已有的 SSH 密钥）
 
 这份文档写给**已经在用 SSH** 的人：`~/.ssh/config` 里有 Host，ssh-agent 里有钥匙，
 服务器上 `authorized_keys` 早就配好了。目标是**不生成任何新秘密**，改一行配置就换上可漫游的连接，
@@ -11,7 +11,7 @@
 
 ```
 之前：  ssh ────────────── TCP ─────────────────▶ sshd
-之后：  ssh ─stdio─▶ tingly-shell proxy ═QUIC═▶ tingly-shell server ─TCP─▶ sshd
+之后：  ssh ─stdio─▶ tingly-ssh proxy ═QUIC═▶ tingly-ssh server ─TCP─▶ sshd
                           │                            │
                           └─ 用 ssh-agent 里的钥匙签名 ─┘   ← 唯一新增的一环
 ```
@@ -21,7 +21,7 @@
 | 你的 SSH 私钥、`~/.ssh/known_hosts`、服务器上的 `sshd_config` 与 `authorized_keys` | **不变** |
 | `scp`、`sftp`、`rsync -e ssh`、`git@…`、`ssh -L/-R/-D`、`ProxyJump`、tmux | **不变**，它们都走 ssh，ssh 走隧道 |
 | SSH 登录认证 | **不变**，仍然由 sshd 端到端完成，隧道看不到内容 |
-| 新增：服务器上跑一个 `tingly-shell server` | 一次性，管理员做 |
+| 新增：服务器上跑一个 `tingly-ssh server` | 一次性，管理员做 |
 | 新增：`~/.ssh/config` 里多一行 `ProxyCommand` | 每台客户端一行 |
 | 新增：要记住的秘密 | **没有** |
 
@@ -40,14 +40,14 @@
 ### 2.1 安装与放行端口
 
 ```bash
-# 按 README 的 Install 一节安装到 /usr/local/bin/tingly-shell
+# 按 README 的 Install 一节安装到 /usr/local/bin/tingly-ssh
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin tingly
 sudo install -d -o root -g tingly -m 0750 /etc/tingly
 # 防火墙放行一个 UDP 端口，下面都用 7443
 sudo ufw allow 7443/udp        # 或者云厂商安全组里放行 UDP 7443
 ```
 
-> 服务器已有 tingly-shell 的话，**先升级服务端**：旧服务端不认识 SSH 密钥认证，
+> 服务器已有 tingly-ssh 的话，**先升级服务端**：旧服务端不认识 SSH 密钥认证，
 > 新客户端用钥匙连旧服务端，只会看到一串 `reconnect failed`。
 
 ### 2.2 建隧道的白名单
@@ -82,18 +82,18 @@ sudo chgrp tingly /etc/tingly/authorized_keys && sudo chmod 0640 /etc/tingly/aut
 ### 2.3 启动（systemd）
 
 ```ini
-# /etc/systemd/system/tingly-shell.service
+# /etc/systemd/system/tingly-ssh.service
 [Unit]
-Description=tingly-shell (SSH over QUIC)
+Description=tingly-ssh (SSH over QUIC)
 After=network-online.target sshd.service
 
 [Service]
 User=tingly
-StateDirectory=tingly-shell
-ExecStart=/usr/local/bin/tingly-shell server \
+StateDirectory=tingly-ssh
+ExecStart=/usr/local/bin/tingly-ssh server \
     --listen :7443 --target 127.0.0.1:22 \
     --authorized-keys /etc/tingly/authorized_keys \
-    --state-dir /var/lib/tingly-shell
+    --state-dir /var/lib/tingly-ssh
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 NoNewPrivileges=yes
@@ -109,8 +109,8 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable --now tingly-shell
-journalctl -u tingly-shell | grep -E 'server listening|authorized keys loaded'
+sudo systemctl enable --now tingly-ssh
+journalctl -u tingly-ssh | grep -E 'server listening|authorized keys loaded'
 # ... msg="server listening" addr=[::]:7443 targets=127.0.0.1:22 pin=sha256:XUYr8w...
 # ... msg="authorized keys loaded" count=3 labels=alice@laptop,bob@mbp,ca:corp-user-ca
 ```
@@ -144,14 +144,14 @@ Host myserver                     # 原来的，保持不变
 Host myserver-roam                # 新增：同一台机器，走隧道
     HostName 203.0.113.10
     User alice
-    ProxyCommand tingly-shell proxy --server %h:7443
+    ProxyCommand tingly-ssh proxy --server %h:7443
 ```
 
 第一次连接：
 
 ```console
 $ ssh myserver-roam
-time=... level=WARN msg="trusting this server key from now on" server=203.0.113.10:7443 pin="sha256:XUYr8w..." file=/home/alice/.config/tingly-shell/known_servers
+time=... level=WARN msg="trusting this server key from now on" server=203.0.113.10:7443 pin="sha256:XUYr8w..." file=/home/alice/.config/tingly-ssh/known_servers
 alice@myserver:~$
 ```
 
@@ -176,7 +176,7 @@ while true; do date; sleep 1; done
 然后在本机：
 
 - 关掉 Wi-Fi 换到手机热点，或者合上盖子过一会儿再打开；
-- 或者直接模拟一次"网络切换"：`pkill -USR1 -f 'tingly-shell proxy'`。
+- 或者直接模拟一次"网络切换"：`pkill -USR1 -f 'tingly-ssh proxy'`。
 
 `date` 应当在短暂停顿后继续输出，不丢行，也不需要重新登录。
 断网时间默认不能超过 60 秒（`--session-linger`），超过了会话会被放弃，ssh 正常退出。
@@ -190,7 +190,7 @@ while true; do date; sleep 1; done
 
 ```sshconfig
 Host *.prod.example.com
-    ProxyCommand tingly-shell proxy --server %h:7443
+    ProxyCommand tingly-ssh proxy --server %h:7443
 ```
 
 跳板机场景只给第一跳加，后面照常用 `ProxyJump`（细节见 [08-jump-host-topologies.md](08-jump-host-topologies.md)）：
@@ -198,7 +198,7 @@ Host *.prod.example.com
 ```sshconfig
 Host jump
     HostName jump.example.com
-    ProxyCommand tingly-shell proxy --server %h:7443
+    ProxyCommand tingly-ssh proxy --server %h:7443
 
 Host internal-*
     ProxyJump jump
@@ -211,7 +211,7 @@ Host internal-*
 | agent 里钥匙很多，只想让隧道用其中一把 | `--identity ~/.ssh/id_ed25519.pub`。默认会拿 agent 里（除 FIDO 外）最多 8 把钥匙各签一次，服务端接受第一把命中的 |
 | 没有 agent，私钥也没设密码 | `--identity ~/.ssh/id_ed25519`，直接读私钥。私钥有密码时必须先放进 agent |
 | **FIDO 硬件钥匙**（`sk-ssh-ed25519`） | 默认不会用，因为每签一次都要碰一下。要用就显式指定：`--identity ~/.ssh/id_ed25519_sk.pub`。**每个会话只碰一次**，之后换网重连用服务端发的恢复凭证，不再签名 |
-| **1Password / Secretive / KeePassXC** 等 agent，且 ssh_config 里用的是 `IdentityAgent` | **坑**：`IdentityAgent` 不会传给 ProxyCommand，ProxyCommand 只看 `SSH_AUTH_SOCK` 环境变量。要在 ProxyCommand 里自己带上：`ProxyCommand env SSH_AUTH_SOCK=$HOME/.1password/agent.sock tingly-shell proxy --server %h:7443`（路径换成你的 agent）。这类 agent 每次签名都要确认的话，也是每个会话只确认一次 |
+| **1Password / Secretive / KeePassXC** 等 agent，且 ssh_config 里用的是 `IdentityAgent` | **坑**：`IdentityAgent` 不会传给 ProxyCommand，ProxyCommand 只看 `SSH_AUTH_SOCK` 环境变量。要在 ProxyCommand 里自己带上：`ProxyCommand env SSH_AUTH_SOCK=$HOME/.1password/agent.sock tingly-ssh proxy --server %h:7443`（路径换成你的 agent）。这类 agent 每次签名都要确认的话，也是每个会话只确认一次 |
 | 服务器上 SSH 端口不是 22 | 服务端改 `--target 127.0.0.1:2222`；客户端的 `Port` 不用改 |
 | 隧道服务端和 ssh 的 `HostName` 不是同一台机器 | 把 `%h` 换成隧道服务端的地址：`--server tunnel.example.com:7443` |
 | 服务端换了机器或重装，隧道服务端公钥变了 | 客户端会立刻拒绝，并告诉你删 `known_servers` 的第几行；核对新 pin 后删掉那一行即可 |
@@ -219,7 +219,7 @@ Host internal-*
 
 ## 5. 撤销与离职
 
-- 删掉 `/etc/tingly/authorized_keys` 里对应的行，再 `sudo systemctl reload tingly-shell`（即 SIGHUP）。
+- 删掉 `/etc/tingly/authorized_keys` 里对应的行，再 `sudo systemctl reload tingly-ssh`（即 SIGHUP）。
   之后这把钥匙既不能新建连接，**它已有的会话也无法再重连**（重连时服务端会重新检查白名单）。
 - 这是**隧道层**的撤销。sshd 那边的 `authorized_keys` 照常要删，两者互不替代。
 - 已经连着的那条链路不会被踢掉（`04-security-model.md` §7）；要立刻断开，重启服务端。

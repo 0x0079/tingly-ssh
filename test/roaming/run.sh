@@ -34,10 +34,10 @@ done
 source "$(cd "$HERE/../lib" && pwd)/common.sh"
 source "$HERE/netctl.sh"
 
-SUMMARY_TITLE="tingly-shell roaming verification"
+SUMMARY_TITLE="tingly-ssh roaming verification"
 
 # --- deployment under test --------------------------------------------------
-TINGLY_BIN=${TINGLY_BIN:-$REPO_ROOT/tingly-shell}
+TINGLY_BIN=${TINGLY_BIN:-$REPO_ROOT/tingly-ssh}
 TINGLY_SERVER=${TINGLY_SERVER:-}          # host:port of the tunnel server
 TINGLY_TARGET=${TINGLY_TARGET:-127.0.0.1:22}
 TINGLY_TOKEN_FILE=${TINGLY_TOKEN_FILE:-}
@@ -320,7 +320,7 @@ set_summary_meta() {
 
 main() {
     mkdir -p "$ART"
-    log "tingly-shell roaming verification, run $RUN_ID"
+    log "tingly-ssh roaming verification, run $RUN_ID"
     require_config
     require_port_free "$CLIENT_PORT" "tunnel client"
     net_ctl_init

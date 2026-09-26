@@ -7,17 +7,19 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // SigNamespace scopes every signature this project asks an SSH key for. It
 // keeps our signatures apart from other SSHSIG users (git, file signing), and
 // the SSHSIG framing itself keeps them apart from SSH user authentication
-// (.design/ssh-key-auth.pencil.md §2.4).
+// (.design/ssh-key-auth.pencil.md §2.4). It keeps the project's original
+// name, tingly-shell: it is a wire identifier, not branding.
 const SigNamespace = "tingly-shell-hello-v1"
 
 // helloContext prefixes the binding message so it cannot be confused with any
-// other message this project might one day sign.
+// other message this project might one day sign. Like SigNamespace, it keeps
+// the original project name on the wire.
 const helloContext = "tingly-shell hello v1"
 
 // HelloMessage is what a key signs to open a link: the TLS exporter ties the

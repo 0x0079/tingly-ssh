@@ -2,7 +2,7 @@
 # Environment for the end-to-end suite. See docs/07-verification-plan.md.
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-BIN=${TINGLY_BIN:-$REPO_ROOT/test/e2e/.bin/tingly-shell}
+BIN=${TINGLY_BIN:-$REPO_ROOT/test/e2e/.bin/tingly-ssh}
 RUN_ID=$(date +%Y%m%d-%H%M%S)
 ART=${ART_DIR:-$REPO_ROOT/test/e2e/artifacts/$RUN_ID}
 
@@ -17,7 +17,7 @@ TEST_LIB=$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)
 source "$TEST_LIB/common.sh"
 source "$TEST_LIB/fixtures.sh"
 
-SUMMARY_TITLE="tingly-shell end-to-end verification"
+SUMMARY_TITLE="tingly-ssh end-to-end verification"
 
 # set_summary_meta stamps the environment into results.md.
 set_summary_meta() {

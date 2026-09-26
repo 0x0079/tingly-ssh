@@ -89,14 +89,14 @@ Stream 的 `Read`/`Write` **不返回错误**，只是阻塞等待——这正�
 
 ```
 # 服务端（和 sshd 同机）
-tingly-shell server --listen :7443 --target 127.0.0.1:22 --token-file /etc/tingly/token
+tingly-ssh server --listen :7443 --target 127.0.0.1:22 --token-file /etc/tingly/token
 
 # 客户端 A：本地端口转发模式
-tingly-shell client --server host:7443 --listen 127.0.0.1:2222 --pin sha256:... --token-file ~/.tingly/token
+tingly-ssh client --server host:7443 --listen 127.0.0.1:2222 --pin sha256:... --token-file ~/.tingly/token
 ssh -p 2222 user@127.0.0.1
 
 # 客户端 B：ProxyCommand 模式（推荐，无本地监听端口）
-ssh -o ProxyCommand='tingly-shell proxy --server host:7443 --pin sha256:... --token-file ~/.tingly/token' user@host
+ssh -o ProxyCommand='tingly-ssh proxy --server host:7443 --pin sha256:... --token-file ~/.tingly/token' user@host
 ```
 
 ## 6. v0 已知限制（写入 roadmap，不在代码里埋 TODO）

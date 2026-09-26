@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // PinPrefix marks a SPKI pin string.
@@ -136,7 +136,7 @@ func generateSelfSigned(certPath, keyPath string, hosts []string) (tls.Certifica
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "tingly-shell"},
+		Subject:               pkix.Name{CommonName: "tingly-ssh"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(CertLifetime),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
@@ -152,7 +152,7 @@ func generateSelfSigned(certPath, keyPath string, hosts []string) (tls.Certifica
 		}
 	}
 	if len(tmpl.DNSNames) == 0 && len(tmpl.IPAddresses) == 0 {
-		tmpl.DNSNames = []string{"tingly-shell"}
+		tmpl.DNSNames = []string{"tingly-ssh"}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
 	if err != nil {
@@ -202,7 +202,7 @@ func LoadToken(path string) ([]byte, error) {
 	return tok, nil
 }
 
-// NewToken returns a fresh base64 token for `tingly-shell keygen`.
+// NewToken returns a fresh base64 token for `tingly-ssh keygen`.
 func NewToken() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {

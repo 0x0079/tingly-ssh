@@ -35,7 +35,7 @@ E15–E18 另起一个只认 SSH 密钥的隧道服务端（udp 7452）和一个
 | ID | 名称 | 步骤要点 | 通过标准 |
 | --- | --- | --- | --- |
 | E1 | 隧道承载普通 TCP + 半关闭 | 经隧道连回显服务，`shutdown(SHUT_WR)` | 收到全部回显且对端把 EOF 正确传下去 |
-| E2 | ssh over ProxyCommand | `ssh -o ProxyCommand='tingly-shell proxy …' host cmd` | 命令输出正确，sshd 日志显示正常认证 |
+| E2 | ssh over ProxyCommand | `ssh -o ProxyCommand='tingly-ssh proxy …' host cmd` | 命令输出正确，sshd 日志显示正常认证 |
 | E3 | ssh over 本地监听端口 | `ssh -p <client-port> 127.0.0.1 cmd` | 同上 |
 | E4 | stdin 转发与 EOF 传播 | `ssh host cat < 200KB 文件` | 回传字节与原文件 `cmp` 一致 |
 | E5 | scp 大文件完整性 | `scp -P <port> 8MiB 文件` | sha256 一致 |
@@ -48,7 +48,7 @@ E15–E18 另起一个只认 SSH 密钥的隧道服务端（udp 7452）和一个
 | E12 | 跳板机两跳 | `ssh -J` 经未改动的跳板机到目标机，第一跳走隧道 | 目标机上的命令输出正确 |
 | E13 | 两跳会话中断链 | 两跳会话进行中两次 `kill -USR1` | 目标机输出 20/20 行，2 次强制断链 |
 | E14 | **每设备凭据与撤销** | 两台设备各自的 token；删掉一行后 `SIGHUP` | 两台都能连且日志归因到 label；被撤销的那台立刻被拒 |
-| E15 | **只用 ssh-agent 登录** | `ProxyCommand tingly-shell proxy --server …`，无 token、无 pin；隧道白名单就是 sshd 的 authorized_keys | ssh 成功；服务端日志归因到公钥注释；首次写入 known_servers 并告警；proxy 默认 warn，终端上无 INFO 行，第二次 stderr 为空 |
+| E15 | **只用 ssh-agent 登录** | `ProxyCommand tingly-ssh proxy --server …`，无 token、无 pin；隧道白名单就是 sshd 的 authorized_keys | ssh 成功；服务端日志归因到公钥注释；首次写入 known_servers 并告警；proxy 默认 warn，终端上无 INFO 行，第二次 stderr 为空 |
 | E16 | key 会话中断链 | 流式输出期间两次 `kill -USR1` | 20/20 行；客户端日志 1 次 `auth=ssh-key`、≥2 次 `auth=ticket`（重连不重签） |
 | E17 | 未授权的 key | `--identity` 指向不在白名单里的私钥（不用 agent） | 立即失败（0 次重试），原因 `no offered SSH key is authorized` |
 | E18 | 服务端换钥（TOFU） | 同地址换一把新服务端密钥 | 客户端立即拒绝（0 次重试），报出 known_servers 的行号；服务端 0 次 `link accepted` |
@@ -62,7 +62,7 @@ E15–E18 另起一个只认 SSH 密钥的隧道服务端（udp 7452）和一个
 ```
 
 前置条件：`go`、`ssh`、`/usr/sbin/sshd`、`python3`。脚本自己编译二进制到
-`test/e2e/.bin/`，也可用 `TINGLY_BIN=/path/to/tingly-shell` 指定既有二进制。
+`test/e2e/.bin/`，也可用 `TINGLY_BIN=/path/to/tingly-ssh` 指定既有二进制。
 
 ### 2.1 故障是怎么注入的
 

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/0x0079/tingly-shell/internal/proto"
+	"github.com/0x0079/tingly-ssh/internal/proto"
 )
 
 // startAgent serves an in-memory keyring on a unix socket, speaking the real

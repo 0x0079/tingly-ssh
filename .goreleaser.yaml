@@ -1,11 +1,11 @@
 version: 2
 
-project_name: tingly-shell
+project_name: tingly-ssh
 
 builds:
-  - id: tingly-shell
-    main: ./cmd/tingly-shell
-    binary: tingly-shell
+  - id: tingly-ssh
+    main: ./cmd/tingly-ssh
+    binary: tingly-ssh
     env:
       - CGO_ENABLED=0
     goos:
@@ -18,8 +18,8 @@ builds:
       - -s -w -X main.version={{ .Version }}
 
 archives:
-  - id: tingly-shell
-    ids: [tingly-shell]
+  - id: tingly-ssh
+    ids: [tingly-ssh]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     formats: [tar.gz]
@@ -40,5 +40,5 @@ changelog:
 release:
   github:
     owner: 0x0079
-    name: tingly-shell
+    name: tingly-ssh
   prerelease: auto
