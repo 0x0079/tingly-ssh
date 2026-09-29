@@ -1,19 +1,42 @@
 name: ci
 
+# Feature branches are covered by their pull request; pushes to main run
+# once more on the merged result. Changes that cannot affect the binary or
+# the test suites (docs, the website, the demo recorder) skip CI entirely.
+
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+    paths-ignore: &skip
+      - "**.md"
+      - "LICENSE"
+      - "docs/**"
+      - "site/**"
+      - "demo/**"
+      - ".github/workflows/pages.yml"
   pull_request:
+    paths-ignore: *skip
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A new push to a PR supersedes the old run; every commit on main is kept.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   unit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: gofmt -l . | tee /dev/stderr | (! read)
+      - name: gofmt
+        run: gofmt -l . | tee /dev/stderr | (! read)
       - run: go vet ./...
       - run: go test -race -count=1 ./...
 
@@ -21,6 +44,7 @@ jobs:
     # Cross-compiles every release target with the .goreleaser.yaml config,
     # without publishing, so a packaging break surfaces before a tag is cut.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -32,54 +56,43 @@ jobs:
           version: "~> v2"
           args: build --snapshot --clean
 
-  e2e:
-    # The real-ssh suite from docs/07-verification-plan.md §2.
+  suite:
+    # The real-ssh suites from docs/07-verification-plan.md:
+    #   e2e             §2, protocol and reconnect behaviour
+    #   scenarios       §3, everyday SSH usage
+    #   roaming-harness §4, with the simulated network controller: no radios
+    #                   in CI, but the measurements and verdicts are the same code
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: e2e
+            dir: e2e
+            script: run.sh
+            packages: openssh-server openssh-client
+          - name: scenarios
+            dir: scenarios
+            script: run.sh
+            packages: openssh-server openssh-client rsync tmux
+          - name: roaming-harness
+            dir: roaming
+            script: selftest.sh
+            packages: openssh-server openssh-client
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: install openssh
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openssh-server openssh-client
-      - run: ./test/e2e/run.sh
+      - name: install ${{ matrix.packages }}
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ${{ matrix.packages }}
+      - run: ./test/${{ matrix.dir }}/${{ matrix.script }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-artifacts
-          path: test/e2e/artifacts/
-
-  scenarios:
-    # Everyday SSH usage from docs/07-verification-plan.md §3.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: install openssh, rsync and tmux
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openssh-server openssh-client rsync tmux
-      - run: ./test/scenarios/run.sh
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: scenario-artifacts
-          path: test/scenarios/artifacts/
-
-  roaming-harness:
-    # The roaming suite from §4, with the simulated network controller: no
-    # radios in CI, but the measurements and verdicts are the same code.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: install openssh
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openssh-server openssh-client
-      - run: ./test/roaming/selftest.sh
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: roaming-artifacts
-          path: test/roaming/artifacts/
+          name: ${{ matrix.dir }}-artifacts
+          path: test/${{ matrix.dir }}/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

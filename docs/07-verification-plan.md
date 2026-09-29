@@ -285,11 +285,13 @@ test/e2e/artifacts/<时间戳>/
 
 ### 5.4 CI
 
-`.github/workflows/ci.yml` 在每次 push 与 PR 上跑四个 job，并上传各自的 artifacts：
+`.github/workflows/ci.yml` 在每个 PR 和推到 `main` 的提交上跑下面五个 job，
+三个真 sshd 套件各自上传 artifacts。只改文档、`site/`、`demo/` 的提交不触发 CI。
 
 | job | 内容 | 典型耗时 |
 | --- | --- | --- |
 | `unit` | `gofmt -l`、`go vet`、`go test -race` | ~25s |
+| `package` | `goreleaser build --snapshot`，交叉编译全部发布目标 | ~50s |
 | `e2e` | `./test/e2e/run.sh`（真 sshd） | ~2.5min |
 | `scenarios` | `./test/scenarios/run.sh`（含 pty、tmux、rsync） | ~1.7min |
 | `roaming-harness` | `./test/roaming/selftest.sh`（NET_CTL=sim） | ~3min |

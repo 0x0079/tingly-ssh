@@ -1,12 +1,12 @@
 name: pages
 
-# Builds the website in site/ on every change to it, and publishes it to
-# GitHub Pages from main. One-time setup: Settings -> Pages -> Source:
-# "GitHub Actions".
+# Builds the website in site/ on every pull request that touches it, and
+# publishes it to GitHub Pages from main. One-time setup: Settings -> Pages
+# -> Source: "GitHub Actions".
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
     paths: ["site/**", ".github/workflows/pages.yml"]
   pull_request:
     paths: ["site/**", ".github/workflows/pages.yml"]
@@ -17,11 +17,13 @@ permissions:
 
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a deploy half-way; superseded PR builds can go.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: site
@@ -46,6 +48,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
