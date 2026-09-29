@@ -11,19 +11,25 @@ export const en: Content = {
   hero: {
     eyebrow: "SSH over QUIC with session resumption",
     title: "Your SSH session",
-    titleAccent: "doesn't drop anymore.",
-    lead: "Switch from Wi-Fi to 5G, close the lid, ride through a tunnel. The same ssh session picks up where it left off, and every byte of output arrives. You keep using ssh, scp, rsync, port forwarding and tmux exactly as today.",
+    titleAccent: "doesn’t drop anymore.",
+    lead: "Switch from Wi-Fi to 5G, close the lid, ride through a tunnel. The same ssh session picks up where it left off, and every byte of output arrives.",
     ctaPrimary: "Get started",
     ctaSecondary: "Watch the demo",
     install: "One binary for each end · Linux & macOS · MPL-2.0",
-    facts: ["OpenSSH & sshd unchanged", "Reuses your SSH keys", "Every byte, in order, exactly once"],
-    term: {
-      plain: "plain ssh",
-      tingly: "ssh + tingly-ssh",
-      outage: "IP change + 15 s with no network",
-      lost: "connection lost",
-      ok: "150/150 updates, in order, exactly once",
+    art: {
+      sending: "sending",
+      outage: "network gone · held on the server",
+      replay: "back online · replaying the gap",
+      done: "every byte, in order, exactly once",
     },
+  },
+  intro: {
+    paragraphs: [
+      "SSH was built for machines that stay put. A session is one TCP connection between two fixed addresses, so when your laptop’s address changes, or the network disappears for half a minute, the connection is gone. So is the job it was running, and whatever it printed while you were away.",
+      "tingly-ssh puts a small bridge at each end and carries your SSH connection over QUIC, with a session layer that can resume. The address can change and the network can vanish. When it comes back, the same ssh session carries on, and every byte of output arrives.",
+      "Nothing about SSH itself changes. You keep your keys, your sshd, your ~/.ssh/config, and every tool that speaks SSH: scp, rsync, git, port forwarding and tmux.",
+    ],
+    facts: ["OpenSSH & sshd unchanged", "Reuses your SSH keys", "Every byte, in order, exactly once"],
   },
   demo: {
     title: "Watch a connection survive",
@@ -33,6 +39,10 @@ export const en: Content = {
     chapters: { start: "Start", switch: "IP changes", outage: "Network gone", back: "Back online" },
     note: "This is a real recording, not an animation. The laptop is a Linux network namespace whose address really changes and whose link really goes down. On the left the job's progress freezes and ssh gives up. On the right it pauses, catches up and finishes. The recording script checks that all 150 progress updates reached the terminal in order and exactly once, and fails otherwise.",
     reproduce: "Reproduce it: demo/record.sh",
+    quote: {
+      text: "150 of 150 progress updates reached the terminal, in order and exactly once.",
+      cite: "The check demo/record.sh runs on every recording, and fails the recording otherwise",
+    },
   },
   fit: {
     title: "Is it for you?",

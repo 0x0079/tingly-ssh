@@ -11,18 +11,24 @@ export const zh: Content = {
     eyebrow: "SSH over QUIC，带会话恢复",
     title: "你的 SSH，",
     titleAccent: "不会再断了。",
-    lead: "Wi-Fi 切 5G、合上盖子、地铁进隧道，还是原来那条 ssh 会话，接着往下跑，每个字节的输出都会送达。ssh、scp、rsync、端口转发、tmux，今天怎么用，明天还怎么用。",
+    lead: "Wi-Fi 切 5G、合上盖子、地铁进隧道，还是原来那条 ssh 会话，接着往下跑，每个字节的输出都会送达。",
     ctaPrimary: "开始使用",
     ctaSecondary: "看演示",
     install: "两端各一个二进制 · Linux 与 macOS · MPL-2.0",
-    facts: ["不改 OpenSSH 与 sshd", "复用你已有的 SSH 密钥", "每个字节按序送达，不重不漏"],
-    term: {
-      plain: "普通 ssh",
-      tingly: "ssh + tingly-ssh",
-      outage: "IP 变化，随后 15 秒彻底断网",
-      lost: "连接已断开",
-      ok: "150/150 条更新，按序送达，不重不漏",
+    art: {
+      sending: "正在发送",
+      outage: "网络消失 · 数据留在服务端",
+      replay: "恢复联网 · 补发缺口",
+      done: "每个字节按序送达，不重不漏",
     },
+  },
+  intro: {
+    paragraphs: [
+      "SSH 是为不挪窝的机器设计的。一条会话就是两个固定地址之间的一条 TCP 连接，笔记本的地址一变，或者网络消失半分钟，连接就没了。它上面跑着的任务，以及你离开期间它打印的输出，也跟着没了。",
+      "tingly-ssh 在两端各放一个小 bridge，用 QUIC 承载你的 SSH 连接，上面再加一层可以恢复的会话层。地址可以变，网络可以断；等网络回来，还是原来那条 ssh 会话，接着往下跑，每个字节的输出都会送达。",
+      "SSH 本身什么都不用改。你的密钥、sshd、~/.ssh/config，以及所有说 SSH 的工具：scp、rsync、git、端口转发、tmux，都照旧。",
+    ],
+    facts: ["不改 OpenSSH 与 sshd", "复用你已有的 SSH 密钥", "每个字节按序送达，不重不漏"],
   },
   demo: {
     title: "看一条连接怎么活下来",
@@ -32,6 +38,10 @@ export const zh: Content = {
     chapters: { start: "开始", switch: "IP 变化", outage: "网络消失", back: "恢复联网" },
     note: "这是真实录制，不是动画。\"笔记本\"是一个 Linux 网络命名空间，它的地址真的变了，链路也真的断了。左边的任务进度卡住，ssh 随后放弃；右边的进度停一下，追上来，然后跑完。录制脚本会检查 150 次进度更新是否全部按顺序、不重不漏地到达终端，否则录制失败。",
     reproduce: "自己复现：demo/record.sh",
+    quote: {
+      text: "150 次进度更新，150 次到达终端，按顺序，不重不漏。",
+      cite: "demo/record.sh 每次录制都会做这项检查，不通过则录制失败",
+    },
   },
   fit: {
     title: "适合你吗？",

@@ -4,10 +4,10 @@ import { Section } from "./Section";
 
 const MARK: Record<Cell["v"], string> = { yes: "✓", no: "✕", partial: "◐" };
 
-export function Compare({ t }: { t: Content["compare"] }) {
+export function Compare({ t, index }: { t: Content["compare"]; index: number }) {
   return (
-    <Section id="compare" title={t.title} lead={t.lead}>
-      <div className="table-wrap">
+    <Section id="compare" index={index} title={t.title} lead={t.lead}>
+      <div className="wide table-wrap">
         <table className="compare">
           <thead>
             <tr>
@@ -36,7 +36,7 @@ export function Compare({ t }: { t: Content["compare"] }) {
           </tbody>
         </table>
       </div>
-      <p className="footnote">
+      <p className="wide footnote">
         <a href={blob("docs/adr/0001-transport-choice.md")}>{t.footnote}</a>
       </p>
     </Section>

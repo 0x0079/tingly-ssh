@@ -1,11 +1,11 @@
 import type { Content } from "../content/types";
 import { Section } from "./Section";
 
-export function Fit({ t }: { t: Content["fit"] }) {
+export function Fit({ t, index }: { t: Content["fit"]; index: number }) {
   return (
-    <Section id="fit" title={t.title} tone="muted">
-      <div className="fit">
-        <div className="card fit__col fit__col--yes">
+    <Section id="fit" index={index} title={t.title}>
+      <div className="wide fit">
+        <div className="fit__col fit__col--yes">
           <h3>{t.yesTitle}</h3>
           <ul>
             {t.yes.map((s) => (
@@ -13,7 +13,7 @@ export function Fit({ t }: { t: Content["fit"] }) {
             ))}
           </ul>
         </div>
-        <div className="card fit__col fit__col--no">
+        <div className="fit__col fit__col--no">
           <h3>{t.noTitle}</h3>
           <ul>
             {t.no.map((s) => (

@@ -30,6 +30,13 @@ export const PHASE_STARTS: [number, PhaseKey][] = [
   [LINK_BACK_AT, "resume"],
 ];
 
+/** The chapter of the story `t` falls in; unlike phaseAt, never falls back to "normal". */
+export function chapterAt(t: number): PhaseKey {
+  let key: PhaseKey = "normal";
+  for (const [at, k] of PHASE_STARTS) if (t >= at) key = k;
+  return key;
+}
+
 export function phaseAt(t: number): PhaseKey {
   if (t >= LINK_BACK_AT && t < LINK_BACK_AT + 3.5) return "resume";
   if (t >= OUTAGE_AT && t < LINK_BACK_AT) return "outage";
