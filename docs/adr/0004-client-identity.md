@@ -1,4 +1,4 @@
-# ADR-0004 · 客户端身份：用 mTLS，而不是自研 HMAC 挑战-响应
+# ADR-0004 · 客户端身份：每设备 token → 复用 SSH 密钥（原提案：mTLS，而非自研 HMAC 挑战-响应）
 
 - 状态：**已接受（方案 A 已实现）**——每设备 token、服务端存哈希，已落地：
   `internal/auth`、会话身份绑定、每凭据配额、`SIGHUP` 热加载、`keygen --label/--expires`。
