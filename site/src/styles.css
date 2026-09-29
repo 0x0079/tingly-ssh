@@ -185,10 +185,16 @@ pre {
   color: var(--accent-strong);
   margin: 0 0 14px;
 }
+.hero__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 48px;
+  align-items: center;
+}
 .hero__title {
-  font-size: clamp(36px, 7vw, 64px);
+  font-size: clamp(36px, 5.6vw, 58px);
   letter-spacing: -0.02em;
-  max-width: 14ch;
+  line-height: 1.08;
 }
 :lang(zh-CN) .hero__title {
   letter-spacing: 0;
@@ -251,6 +257,73 @@ pre {
   font-size: 14px;
   color: var(--text-muted);
   margin: 14px 0 0;
+}
+
+/* before/after terminal card */
+.hero__term {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.term__event {
+  justify-self: start;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--replay);
+  background: color-mix(in srgb, var(--replay) 14%, transparent);
+}
+.term {
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.term__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #94a3b8;
+  border-bottom: 1px solid rgb(148 163 184 / 0.18);
+}
+.term__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #f87171;
+}
+.term--good .term__dot {
+  background: #34d399;
+}
+.term pre {
+  margin: 0;
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.term__dim {
+  color: #94a3b8;
+}
+.term__err {
+  color: #f87171;
+}
+.term__ok {
+  color: #34d399;
+}
+@media (max-width: 900px) {
+  .hero__grid {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
 }
 
 /* ---- sections ------------------------------------------------------- */

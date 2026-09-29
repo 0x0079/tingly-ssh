@@ -37,6 +37,7 @@ export interface Content {
     ctaSecondary: string;
     install: string;
     facts: string[];
+    term: { plain: string; tingly: string; outage: string; lost: string; ok: string };
   };
   demo: {
     title: string;
