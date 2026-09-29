@@ -34,7 +34,7 @@
 - [x] 漫游 harness 自测 `selftest.sh`：无无线电环境下用 sim 控制器跑完整 R 用例
 - [x] 心跳测量把"看起来还活着"变成可判定数字：计数器连续性 + 最大卡顿时长
 
-## M3 · 生产加固（未开始）
+## M3 · 生产加固（进行中）
 
 安全项按 `04-security-model.md` §8 的编号排列，括号里是风险编号。
 
@@ -44,6 +44,11 @@
       - [x] `SIGHUP` 热加载凭据文件，撤销 = 删一行；解析失败保留旧的一套
       - [x] 拒绝原因走 `HELLO_ACK`（`unknown credential` / `credential expired`）
       - [ ] B（可选，高保障场景）：TLS 客户端证书白名单，凭据不上线
+- [x] 复用 SSH 密钥认证隧道（ADR-0004 §9，取代方案 B 的 mTLS）：
+      - [x] `HELLO` 带 SSHSIG 签名，经 TLS exporter 绑定到当前连接（channel binding）
+      - [x] 重连凭 ticket 免重签；白名单变更即时生效
+      - [x] 服务端公钥首次信任（`known_servers`），换钥即拒绝
+      - [x] 验收 E15–E18（`07-verification-plan.md`）
 - [x] ~~token 改为 HMAC 挑战-响应~~ → 评估后否决，见 ADR-0004
 - [x] `--max-sessions` + 驱逐最久未连接会话 + `RESOURCE_EXHAUSTED` 拒绝（R-3，内存 DoS）
 - [x] 每凭据会话配额 `--max-sessions-per-credential`（R-3 余下部分）

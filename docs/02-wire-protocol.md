@@ -69,6 +69,9 @@ ticket(bytes) m(v) proof×m          m ≤ 8
 proof := public_key(bytes) signature(bytes)      均为 SSH wire 格式
 ```
 
+> 命名说明：下面的 `tingly-shell` 是项目改名前的旧名，作为线上标识符原样保留
+> （两端必须一致，改了就不兼容），不是遗漏的改名。
+
 `ticket` 与 `proof` 恰好出现一种：
 
 - **proofs**：每把钥匙对 `SSHSIG(namespace="tingly-shell-hello-v1", SHA-512(M))` 的签名，

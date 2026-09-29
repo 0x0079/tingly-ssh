@@ -102,6 +102,7 @@ ci-runner-3        sha256:77de…                                    2026-12-31
 ### 3.2 SSH 密钥认证（复用用户已有的钥匙）
 
 设计全文：[`.design/ssh-key-auth.pencil.md`](../.design/ssh-key-auth.pencil.md)。要点：
+（其中的 `tingly-shell` 是改名前的旧名，作为线上标识符保留，不是遗漏。）
 
 - 客户端用 ssh-agent（或 `--identity` 指定的未加密私钥）签
   `SSHSIG("tingly-shell-hello-v1", "tingly-shell hello v1" 0x00 || TLS-Exporter || session_id)`，
