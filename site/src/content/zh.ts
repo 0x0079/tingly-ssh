@@ -16,6 +16,13 @@ export const zh: Content = {
     ctaSecondary: "看演示",
     install: "两端各一个二进制 · Linux 与 macOS · MPL-2.0",
     facts: ["不改 OpenSSH 与 sshd", "复用你已有的 SSH 密钥", "每个字节按序送达，不重不漏"],
+    term: {
+      plain: "普通 ssh",
+      tingly: "ssh + tingly-ssh",
+      outage: "IP 变化，随后 15 秒彻底断网",
+      lost: "连接已断开",
+      ok: "150/150 条更新，按序送达，不重不漏",
+    },
   },
   demo: {
     title: "看一条连接怎么活下来",

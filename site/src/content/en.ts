@@ -17,6 +17,13 @@ export const en: Content = {
     ctaSecondary: "Watch the demo",
     install: "One binary for each end · Linux & macOS · MPL-2.0",
     facts: ["OpenSSH & sshd unchanged", "Reuses your SSH keys", "Every byte, in order, exactly once"],
+    term: {
+      plain: "plain ssh",
+      tingly: "ssh + tingly-ssh",
+      outage: "IP change + 15 s with no network",
+      lost: "connection lost",
+      ok: "150/150 updates, in order, exactly once",
+    },
   },
   demo: {
     title: "Watch a connection survive",
