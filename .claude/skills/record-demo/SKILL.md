@@ -44,7 +44,7 @@ The demo is the project's main pitch, so it follows two rules:
    Look at a few frames (for example extract them with Pillow) before you commit.
 5. **Publish to the site**:
    `cp demo/out/demo.cast site/public/demo.cast && cp demo/out/markers.json site/src/assets/demo-markers.json`,
-   then `cd site && npm ci && npm run build`.
+   then `cd site && pnpm install && pnpm build`.
 6. **Check the site** in Chromium via Playwright (`executablePath` from `/opt/pw-browsers` if the
    project's version differs): no console errors, `scrollWidth` equal to the viewport at 390 px and
    1280 px, and the chapter buttons land on the right moments, in dark and light, `?lang=en` and `?lang=zh`.
