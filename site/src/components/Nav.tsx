@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { Content, Lang } from "../content/types";
 import { REPO } from "../content/code";
 import { Logo } from "./Logo";
@@ -16,9 +17,18 @@ export function Nav({ t, lang, setLang }: Props) {
     ["#start", t.start],
     ["#faq", t.faq],
   ];
+  // The bar is invisible over the hero and gains a hairline once content scrolls under it.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   return (
-    <header className="nav">
-      <div className="container nav__inner">
+    <header className={`nav ${scrolled ? "is-scrolled" : ""}`}>
+      <div className="wide nav__inner">
         <a href="#top" className="nav__brand">
           <Logo />
           <span>tingly-ssh</span>

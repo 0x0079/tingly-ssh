@@ -68,7 +68,7 @@ export function DemoPlayer({ t }: Props) {
   }
 
   return (
-    <div className="demo">
+    <figure className="wide demo">
       <div className="demo__labels" aria-hidden="true">
         <span className="demo__label demo__label--bad">{t.left}</span>
         <span className="demo__label demo__label--good">{t.right}</span>
@@ -79,7 +79,7 @@ export function DemoPlayer({ t }: Props) {
           <button
             key={key}
             type="button"
-            className={`chip ${chapter === key ? "chip--active" : ""}`}
+            className={`tab ${chapter === key ? "is-active" : ""}`}
             aria-pressed={chapter === key}
             onClick={() => jump(time, key)}
           >
@@ -87,6 +87,6 @@ export function DemoPlayer({ t }: Props) {
           </button>
         ))}
       </div>
-    </div>
+    </figure>
   );
 }

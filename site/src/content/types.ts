@@ -36,9 +36,10 @@ export interface Content {
     ctaPrimary: string;
     ctaSecondary: string;
     install: string;
-    facts: string[];
-    term: { plain: string; tingly: string; outage: string; lost: string; ok: string };
+    /** Status lines under the hero's byte-stream illustration. */
+    art: { sending: string; outage: string; replay: string; done: string };
   };
+  intro: { paragraphs: string[]; facts: string[] };
   demo: {
     title: string;
     lead: string;
@@ -47,6 +48,7 @@ export interface Content {
     chapters: { start: string; switch: string; outage: string; back: string };
     note: string;
     reproduce: string;
+    quote: { text: string; cite: string };
   };
   fit: {
     title: string;

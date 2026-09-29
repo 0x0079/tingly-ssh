@@ -1,10 +1,10 @@
 import type { Content } from "../content/types";
 import { Section } from "./Section";
 
-export function Faq({ t }: { t: Content["faq"] }) {
+export function Faq({ t, index }: { t: Content["faq"]; index: number }) {
   return (
-    <Section id="faq" title={t.title} tone="muted">
-      <div className="faq">
+    <Section id="faq" index={index} title={t.title}>
+      <div className="prose faq">
         {t.items.map((item) => (
           <details key={item.q} className="faq__item">
             <summary>{item.q}</summary>
